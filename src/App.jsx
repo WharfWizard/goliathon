@@ -185,7 +185,8 @@ Include these sections:
 # Legal Basis Tracker — table: Regulation | Duty | Alleged Breach | Evidence | Status
 # Next Steps — prioritised action list
 
-Footer: "Built with Goliathon by Get SAFE · aolp.info/projects · Educational use only. Not legal advice."` }]);
+Footer: "Built with Goliathon by Get SAFE · https://www.get-safe.org.uk/
+ · Educational use only. Not legal advice."` }]);
     setNotionMd(md); setGenerated(true); setLoading(false);
   };
 
@@ -604,7 +605,8 @@ export default function GoliathonApp() {
       {/* Footer */}
       <div style={{ borderTop: "1px solid #003a6e", background: "#001e3d", padding: "20px 40px", textAlign: "center" }}>
         <p style={{ margin: 0, fontSize: 11, color: "#7a96b0" }}>
-          Goliathon · Get SAFE (Support After Financial Exploitation) · Founded by Steve Conley · Academy of Life Planning · <a href="https://www.aolp.info/projects" style={{ color: "#a0b4c8" }}>aolp.info/projects</a> · Educational use only. Not legal, financial, or mental-health advice.
+          Goliathon · Get SAFE (Support After Financial Exploitation) · Founded by Steve Conley · Academy of Life Planning · <a href="https://www.get-safe.org.uk/
+" style={{ color: "#a0b4c8" }}>get-safe.org.uk</a> · Educational use only. Not legal, financial, or mental-health advice.
         </p>
       </div>
 

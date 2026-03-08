@@ -1,9 +1,18 @@
 import { useState, useRef } from "react";
 
-const GOLD = "#c8a96e";
-const DARK = "#0f0f0f";
-const PANEL = "#161410";
-const BORDER = "#2a2218";
+// Inject Google Fonts at runtime
+if (!document.getElementById("goliathon-fonts")) {
+  const link = document.createElement("link");
+  link.id = "goliathon-fonts";
+  link.rel = "stylesheet";
+  link.href = "https://fonts.googleapis.com/css2?family=Poppins:wght@400;600;700;800&family=Open+Sans:wght@400;500;600&display=swap";
+  document.head.appendChild(link);
+}
+
+const GOLD = "#ffc72c";
+const DARK = "#00274d";
+const PANEL = "#002a57";
+const BORDER = "#003a6e";
 
 const SYSTEM = `You are the Goliathon AI — created by Steve Conley, Founder of Get SAFE (Support After Financial Exploitation) and the Academy of Life Planning. Goliathon is a "battle mech for justice": an AI-powered system that turns survivors of financial exploitation into strategic citizen investigators.
 
@@ -28,14 +37,14 @@ function downloadMd(filename, content) {
 }
 
 function Card({ children, style = {} }) {
-  return <div style={{ background: PANEL, border: `1px solid ${BORDER}`, borderRadius: 12, padding: 24, ...style }}>{children}</div>;
+  return <div style={{ background: "#002a57", border: "1px solid #003a6e", borderRadius: 12, padding: 24, ...style }}>{children}</div>;
 }
 
 function Btn({ children, onClick, disabled, variant = "primary", small = false }) {
   const styles = {
-    primary: { background: `linear-gradient(135deg, ${GOLD}, #8a6a30)`, color: "#0f0f0f", border: "none" },
+    primary: { background: `linear-gradient(135deg, ${GOLD}, #e6a800)`, color: "#00274d", border: "none" },
     ghost: { background: "transparent", color: GOLD, border: `1px solid ${GOLD}50` },
-    subtle: { background: "#1e1a14", color: "#8a7a60", border: `1px solid ${BORDER}` },
+    subtle: { background: "#001e3d", color: "#a0b4c8", border: `1px solid ${BORDER}` },
   };
   return (
     <button onClick={onClick} disabled={disabled} style={{
@@ -44,7 +53,7 @@ function Btn({ children, onClick, disabled, variant = "primary", small = false }
       fontSize: small ? 11 : 13, letterSpacing: 1,
       textTransform: "uppercase", fontWeight: 700,
       cursor: disabled ? "not-allowed" : "pointer",
-      opacity: disabled ? 0.4 : 1, fontFamily: "Georgia, serif",
+      opacity: disabled ? 0.4 : 1, fontFamily: "Poppins, sans-serif",
       transition: "opacity 0.2s",
     }}>{children}</button>
   );
@@ -54,7 +63,7 @@ function Spinner() {
   return (
     <div style={{ display: "flex", gap: 6, alignItems: "center", padding: "14px 0" }}>
       {[0,1,2].map(i => <div key={i} style={{ width: 8, height: 8, background: GOLD, borderRadius: "50%", animation: `pulse 1.2s ease-in-out ${i*0.2}s infinite` }} />)}
-      <span style={{ color: "#6a5c48", fontSize: 13, marginLeft: 8, fontStyle: "italic" }}>Goliathon is working…</span>
+      <span style={{ color: "#7a96b0", fontSize: 13, marginLeft: 8, fontStyle: "italic" }}>Goliathon is working…</span>
     </div>
   );
 }
@@ -67,7 +76,7 @@ function DownloadRow({ label, filename, content }) {
   if (!content) return null;
   return (
     <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "10px 0", borderBottom: `1px solid ${BORDER}` }}>
-      <span style={{ fontSize: 13, color: "#c8b898" }}>{label}</span>
+      <span style={{ fontSize: 13, color: "#e8eef4" }}>{label}</span>
       <Btn small variant="ghost" onClick={() => downloadMd(filename, content)}>↓ Download .md</Btn>
     </div>
   );
@@ -96,14 +105,14 @@ function StepIndicator({ current }) {
             <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 6 }}>
               <div style={{
                 width: 36, height: 36, borderRadius: "50%",
-                background: done ? GOLD : active ? `linear-gradient(135deg, ${GOLD}, #8a6a30)` : "#1e1a14",
+                background: done ? GOLD : active ? GOLD : "#003a6e",
                 border: done || active ? "none" : `1px solid ${BORDER}`,
                 display: "flex", alignItems: "center", justifyContent: "center",
-                fontSize: 13, fontWeight: 700, color: done || active ? "#0f0f0f" : "#4a3c2a",
+                fontSize: 13, fontWeight: 700, color: done || active ? "#00274d" : "#5a7a96",
               }}>{done ? "✓" : n}</div>
-              <span style={{ fontSize: 10, letterSpacing: 1, textTransform: "uppercase", color: active ? GOLD : done ? "#8a7a60" : "#3a2e1a", whiteSpace: "nowrap" }}>{s}</span>
+              <span style={{ fontSize: 10, letterSpacing: 1, textTransform: "uppercase", color: active ? GOLD : done ? "#a0b4c8" : "#004080", whiteSpace: "nowrap" }}>{s}</span>
             </div>
-            {i < steps.length - 1 && <div style={{ flex: 1, height: 1, background: done ? GOLD+"60" : BORDER, margin: "0 8px", marginBottom: 22 }} />}
+            {i < steps.length - 1 && <div style={{ flex: 1, height: 1, background: done ? GOLD : "#003a6e", margin: "0 8px", marginBottom: 22 }} />}
           </div>
         );
       })}
@@ -135,16 +144,16 @@ Story: ${story}` }]);
 
   return (
     <div>
-      <h2 style={{ margin: "0 0 8px", fontSize: 26, color: "#f5ead8" }}>Tell me what happened.</h2>
-      <p style={{ color: "#8a7a60", fontSize: 15, marginBottom: 28, lineHeight: 1.7 }}>Write in your own words — as much or as little as you feel ready to share. There is no wrong way to begin. Goliathon will help you turn this into structured, strategic power.</p>
+      <h2 style={{ margin: "0 0 8px", fontSize: 26, color: "#ffffff", fontFamily: "'Poppins', sans-serif", fontWeight: 700 }}>Tell me what happened.</h2>
+      <p style={{ color: "#a0b4c8", fontSize: 15, marginBottom: 28, lineHeight: 1.7 }}>Write in your own words — as much or as little as you feel ready to share. There is no wrong way to begin. Goliathon will help you turn this into structured, strategic power.</p>
       <Card style={{ marginBottom: 20 }}>
         <textarea value={story} onChange={e => setStory(e.target.value)}
           placeholder="Start with what happened, when it started, who was involved, and how it has affected you. You can always add more detail later as you upload evidence…"
-          style={{ width: "100%", minHeight: 280, background: "transparent", border: "none", color: "#c8b898", fontSize: 15, lineHeight: 1.9, resize: "vertical", outline: "none", fontFamily: "Georgia, serif", boxSizing: "border-box" }} />
+          style={{ width: "100%", minHeight: 280, background: "transparent", border: "none", color: "#ffffff", fontSize: 15, lineHeight: 1.9, resize: "vertical", outline: "none", fontFamily: "Poppins, sans-serif", boxSizing: "border-box" }} />
       </Card>
       <div style={{ display: "flex", alignItems: "center", gap: 16, flexWrap: "wrap" }}>
         <Btn onClick={handleSubmit} disabled={story.trim().length < 50 || loading}>{loading ? "Analysing…" : "Begin My Case →"}</Btn>
-        <span style={{ fontSize: 12, color: "#4a3c2a" }}>Min. 50 characters · {story.length} typed</span>
+        <span style={{ fontSize: 12, color: "#5a7a96" }}>Min. 50 characters · {story.length} typed</span>
       </div>
       {loading && <Spinner />}
     </div>
@@ -184,16 +193,16 @@ Footer: "Built with Goliathon by Get SAFE · aolp.info/projects · Educational u
 
   return (
     <div>
-      <h2 style={{ margin: "0 0 8px", fontSize: 26, color: "#f5ead8" }}>Your Notion Workspace</h2>
-      <p style={{ color: "#8a7a60", fontSize: 15, marginBottom: 24, lineHeight: 1.7 }}>Your complete digital evidence fortress — structured for press, court, and MP readiness.</p>
+      <h2 style={{ margin: "0 0 8px", fontSize: 26, color: "#ffffff", fontFamily: "'Poppins', sans-serif", fontWeight: 700 }}>Your Notion Workspace</h2>
+      <p style={{ color: "#a0b4c8", fontSize: 15, marginBottom: 24, lineHeight: 1.7 }}>Your complete digital evidence fortress — structured for press, court, and MP readiness.</p>
 
       <Card style={{ marginBottom: 24, borderColor: GOLD+"30" }}>
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 24 }}>
           <div>
             <Label>Case Title</Label>
-            <p style={{ margin: "0 0 20px", fontSize: 16, color: "#f5ead8", fontWeight: 700 }}>{caseData.caseTitle}</p>
+            <p style={{ margin: "0 0 20px", fontSize: 16, color: "#ffffff", fontWeight: 700 }}>{caseData.caseTitle}</p>
             <Label>Date Range</Label>
-            <p style={{ margin: "0 0 20px", fontSize: 14, color: "#c8b898" }}>{caseData.dateRange}</p>
+            <p style={{ margin: "0 0 20px", fontSize: 14, color: "#e8eef4" }}>{caseData.dateRange}</p>
             <Label>Urgency</Label>
             <span style={{ fontSize: 12, padding: "3px 12px", borderRadius: 20, background: urgencyColor+"25", color: urgencyColor, border: `1px solid ${urgencyColor}50` }}>{caseData.urgency}</span>
           </div>
@@ -202,7 +211,7 @@ Footer: "Built with Goliathon by Get SAFE · aolp.info/projects · Educational u
             {(caseData.coreIssues||[]).map((issue, i) => (
               <div key={i} style={{ display: "flex", gap: 8, marginBottom: 8 }}>
                 <div style={{ width: 5, height: 5, background: GOLD, borderRadius: "50%", marginTop: 7, flexShrink: 0 }} />
-                <span style={{ fontSize: 13, color: "#c8b898", lineHeight: 1.6 }}>{issue}</span>
+                <span style={{ fontSize: 13, color: "#e8eef4", lineHeight: 1.6 }}>{issue}</span>
               </div>
             ))}
           </div>
@@ -216,14 +225,14 @@ Footer: "Built with Goliathon by Get SAFE · aolp.info/projects · Educational u
         </div>
       ) : (
         <div>
-          <Card style={{ marginBottom: 16, background: "#0f0f0f" }}>
-            <pre style={{ margin: 0, fontSize: 12, color: "#6a5c48", lineHeight: 1.7, whiteSpace: "pre-wrap", maxHeight: 260, overflowY: "auto" }}>{notionMd.substring(0, 900)}…</pre>
+          <Card style={{ marginBottom: 16, background: "#00274d" }}>
+            <pre style={{ margin: 0, fontSize: 12, color: "#7a96b0", lineHeight: 1.7, whiteSpace: "pre-wrap", maxHeight: 260, overflowY: "auto" }}>{notionMd.substring(0, 900)}…</pre>
           </Card>
           <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
             <Btn onClick={() => downloadMd(`${slug}_Notion_Workspace.md`, notionMd)}>↓ Download Notion Workspace</Btn>
             <Btn variant="ghost" onClick={() => onComplete({ notionMd })}>Continue → Living Documents</Btn>
           </div>
-          <p style={{ fontSize: 12, color: "#4a3c2a", marginTop: 12 }}>Import: Notion → New Page → Import → Markdown & CSV</p>
+          <p style={{ fontSize: 12, color: "#5a7a96", marginTop: 12 }}>Import: Notion → New Page → Import → Markdown & CSV</p>
         </div>
       )}
     </div>
@@ -280,15 +289,15 @@ End with declaration of truth.` }]);
 
   return (
     <div>
-      <h2 style={{ margin: "0 0 8px", fontSize: 26, color: "#f5ead8" }}>Your Living Documents</h2>
-      <p style={{ color: "#8a7a60", fontSize: 15, marginBottom: 24, lineHeight: 1.7 }}>Three core documents that grow with every piece of evidence you add. Download now, then re-download updated versions after each upload.</p>
+      <h2 style={{ margin: "0 0 8px", fontSize: 26, color: "#ffffff", fontFamily: "'Poppins', sans-serif", fontWeight: 700 }}>Your Living Documents</h2>
+      <p style={{ color: "#a0b4c8", fontSize: 15, marginBottom: 24, lineHeight: 1.7 }}>Three core documents that grow with every piece of evidence you add. Download now, then re-download updated versions after each upload.</p>
 
       <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 16, marginBottom: 24 }}>
         {docDefs.map(d => (
           <Card key={d.key} style={{ textAlign: "center", borderColor: generated ? GOLD+"30" : BORDER }}>
             <div style={{ fontSize: 32, marginBottom: 10 }}>{d.icon}</div>
-            <div style={{ fontSize: 13, fontWeight: 700, color: "#f5ead8", marginBottom: 8 }}>{d.label}</div>
-            <div style={{ fontSize: 12, color: "#6a5c48", lineHeight: 1.6, marginBottom: 16 }}>{d.desc}</div>
+            <div style={{ fontSize: 13, fontWeight: 700, color: "#ffffff", marginBottom: 8 }}>{d.label}</div>
+            <div style={{ fontSize: 12, color: "#7a96b0", lineHeight: 1.6, marginBottom: 16 }}>{d.desc}</div>
             {generated && docs[d.key] && (
               <Btn small variant="ghost" onClick={() => downloadMd(`${slug}_${d.label.replace(/ /g,"_")}.md`, docs[d.key])}>↓ Download</Btn>
             )}
@@ -334,26 +343,26 @@ function AnalysisTabs({ entry, slug }) {
           <button key={t.id} onClick={() => setTab(t.id)} style={{
             background: "none", border: "none", padding: "9px 16px",
             fontSize: 11, letterSpacing: 1, textTransform: "uppercase",
-            cursor: "pointer", fontFamily: "Georgia, serif",
-            color: tab === t.id ? GOLD : "#6a5c48",
+            cursor: "pointer", fontFamily: "Poppins, sans-serif",
+            color: tab === t.id ? GOLD : "#7a96b0",
             borderBottom: tab === t.id ? `2px solid ${GOLD}` : "2px solid transparent",
             marginBottom: -1,
           }}>{t.label}</button>
         ))}
       </div>
-      <Card style={{ background: "#0f0f0f", minHeight: 260, maxHeight: 420, overflowY: "auto", marginBottom: 14 }}>
-        <pre style={{ margin: 0, fontSize: 13, color: "#c8b898", lineHeight: 1.8, whiteSpace: "pre-wrap", fontFamily: "Georgia, serif" }}>{content[tab]}</pre>
+      <Card style={{ background: "#001e3d", minHeight: 260, maxHeight: 420, overflowY: "auto", marginBottom: 14 }}>
+        <pre style={{ margin: 0, fontSize: 13, color: "#e8eef4", lineHeight: 1.8, whiteSpace: "pre-wrap", fontFamily: "Poppins, sans-serif" }}>{content[tab]}</pre>
       </Card>
       <Btn small variant="ghost" onClick={() => downloadMd(filenames[tab], content[tab])}>↓ Download {tabs.find(t=>t.id===tab)?.label}</Btn>
     </div>
   );
 }
 
-function Step4({ caseData, story, docs: initialDocs }) {
+function Step4({ caseData, story, docs: initialDocs, savedEvidenceLog, onEvidenceUpdate }) {
   const [docs, setDocs] = useState(initialDocs);
-  const [evidenceLog, setEvidenceLog] = useState([]);
+  const [evidenceLog, setEvidenceLog] = useState(savedEvidenceLog || []);
   const [loading, setLoading] = useState(false);
-  const [currentAnalysis, setCurrentAnalysis] = useState(null);
+  const [currentAnalysis, setCurrentAnalysis] = useState(savedEvidenceLog?.[savedEvidenceLog.length - 1] || null);
   const [dragOver, setDragOver] = useState(false);
   const fileRef = useRef(null);
   const slug = caseData.caseTitle.replace(/[^a-z0-9]/gi, "_");
@@ -412,17 +421,19 @@ Three updated documents separated ONLY by "===DOC===":
 
       const summaryLine = analysis.split("\n").find(l=>l.length>30&&!l.startsWith("#"))||"Evidence processed.";
       const entry = { filename: file.name, analysis, coverNote, nextSteps, summary: summaryLine.substring(0,100) };
-      setEvidenceLog(prev=>[...prev, entry]);
+      const newLog = [...evidenceLog, entry];
+      setEvidenceLog(newLog);
       setDocs(newDocs);
       setCurrentAnalysis(entry);
+      if (onEvidenceUpdate) onEvidenceUpdate(newLog);
     } catch { alert("Error processing file. Please try again."); }
     setLoading(false);
   };
 
   return (
     <div>
-      <h2 style={{ margin: "0 0 8px", fontSize: 26, color: "#f5ead8" }}>Add Evidence</h2>
-      <p style={{ color: "#8a7a60", fontSize: 15, marginBottom: 24, lineHeight: 1.7 }}>Upload any piece of evidence as a .TXT file — a letter, email, FOI response, complaint reply. Goliathon will analyse it and update all your living documents.</p>
+      <h2 style={{ margin: "0 0 8px", fontSize: 26, color: "#ffffff", fontFamily: "'Poppins', sans-serif", fontWeight: 700 }}>Add Evidence</h2>
+      <p style={{ color: "#a0b4c8", fontSize: 15, marginBottom: 24, lineHeight: 1.7 }}>Upload any piece of evidence as a .TXT file — a letter, email, FOI response, complaint reply. Goliathon will analyse it and update all your living documents.</p>
 
       <div style={{ display: "grid", gridTemplateColumns: "300px 1fr", gap: 24 }}>
         {/* Left */}
@@ -433,11 +444,11 @@ Three updated documents separated ONLY by "===DOC===":
               onDragLeave={()=>setDragOver(false)}
               onDrop={e=>{e.preventDefault();setDragOver(false);processFile(e.dataTransfer.files[0]);}}
               onClick={()=>!loading&&fileRef.current?.click()}
-              style={{ border: `2px dashed ${dragOver?GOLD:BORDER}`, borderRadius: 10, padding: "28px 16px", textAlign: "center", cursor: loading?"not-allowed":"pointer", background: dragOver?"#1a1208":"transparent", transition: "all 0.2s" }}
+              style={{ border: `2px dashed ${dragOver?GOLD:BORDER}`, borderRadius: 10, padding: "28px 16px", textAlign: "center", cursor: loading?"not-allowed":"pointer", background: dragOver?"#001e3d":"transparent", transition: "all 0.2s" }}
             >
               <div style={{ fontSize: 34, marginBottom: 10 }}>📄</div>
-              <p style={{ margin: "0 0 4px", fontSize: 14, color: "#c8b898" }}>{loading?"Processing…":"Drop .TXT file here"}</p>
-              <p style={{ margin: 0, fontSize: 11, color: "#6a5c48" }}>or click to browse</p>
+              <p style={{ margin: "0 0 4px", fontSize: 14, color: "#e8eef4" }}>{loading?"Processing…":"Drop .TXT file here"}</p>
+              <p style={{ margin: 0, fontSize: 11, color: "#7a96b0" }}>or click to browse</p>
             </div>
             <input ref={fileRef} type="file" accept=".txt" style={{ display: "none" }} onChange={e=>processFile(e.target.files[0])} />
             {loading && <Spinner />}
@@ -448,8 +459,8 @@ Three updated documents separated ONLY by "===DOC===":
               <Label>Evidence Uploaded ({evidenceLog.length})</Label>
               {evidenceLog.map((e,i) => (
                 <div key={i} onClick={()=>setCurrentAnalysis(e)} style={{ padding: "10px 0", borderBottom: `1px solid ${BORDER}`, cursor: "pointer" }}>
-                  <div style={{ fontSize: 13, color: currentAnalysis?.filename===e.filename?GOLD:"#c8b898", fontWeight: 700, marginBottom: 3 }}>{e.filename}</div>
-                  <div style={{ fontSize: 11, color: "#6a5c48", lineHeight: 1.5 }}>{e.summary.substring(0,80)}…</div>
+                  <div style={{ fontSize: 13, color: currentAnalysis?.filename===e.filename?GOLD:"#e8eef4", fontWeight: 700, marginBottom: 3 }}>{e.filename}</div>
+                  <div style={{ fontSize: 11, color: "#7a96b0", lineHeight: 1.5 }}>{e.summary.substring(0,80)}…</div>
                 </div>
               ))}
             </Card>
@@ -470,7 +481,7 @@ Three updated documents separated ONLY by "===DOC===":
               <div>
                 <div style={{ fontSize: 48, marginBottom: 16 }}>⚖️</div>
                 <h3 style={{ margin: "0 0 12px", color: GOLD, fontSize: 18 }}>Ready for your first document</h3>
-                <p style={{ color: "#6a5c48", fontSize: 14, lineHeight: 1.7, maxWidth: 300 }}>Upload a letter, email, FOI response, or any correspondence as a .TXT file. Goliathon will analyse it and update your living documents instantly.</p>
+                <p style={{ color: "#7a96b0", fontSize: 14, lineHeight: 1.7, maxWidth: 300 }}>Upload a letter, email, FOI response, or any correspondence as a .TXT file. Goliathon will analyse it and update your living documents instantly.</p>
               </div>
             </Card>
           ) : currentAnalysis ? (
@@ -482,6 +493,71 @@ Three updated documents separated ONLY by "===DOC===":
   );
 }
 
+// ── SAVE / RESTORE ───────────────────────────────────────────────────────────
+
+function SaveRestore({ step, state, onRestore }) {
+  const restoreRef = useRef(null);
+  const [restoreError, setRestoreError] = useState("");
+  const [saved, setSaved] = useState(false);
+
+  const handleSave = () => {
+    const session = { version: 1, savedAt: new Date().toISOString(), step, state };
+    const blob = new Blob([JSON.stringify(session, null, 2)], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    const slug = state.caseData?.caseTitle?.replace(/[^a-z0-9]/gi, "_") || "session";
+    a.href = url;
+    a.download = `Goliathon_${slug}_${new Date().toISOString().slice(0,10)}.json`;
+    a.click();
+    URL.revokeObjectURL(url);
+    setSaved(true);
+    setTimeout(() => setSaved(false), 3000);
+  };
+
+  const handleRestore = (file) => {
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      try {
+        const session = JSON.parse(e.target.result);
+        if (!session.version || !session.step || !session.state) throw new Error("Invalid file");
+        onRestore(session.step, session.state);
+        setRestoreError("");
+      } catch {
+        setRestoreError("This file doesn't look like a valid Goliathon session. Please try again.");
+      }
+    };
+    reader.readAsText(file);
+  };
+
+  // Only show save if there's something worth saving
+  const canSave = step > 1;
+
+  return (
+    <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+      {canSave && (
+        <button onClick={handleSave} style={{
+          background: "none", border: `1px solid ${GOLD}40`, borderRadius: 6,
+          padding: "6px 14px", fontSize: 11, letterSpacing: 1, textTransform: "uppercase",
+          color: saved ? "#7e9e82" : GOLD, cursor: "pointer", fontFamily: "Poppins, sans-serif",
+          transition: "all 0.2s",
+        }}>
+          {saved ? "✓ Session Saved" : "↓ Save Session"}
+        </button>
+      )}
+      <button onClick={() => restoreRef.current?.click()} style={{
+        background: "none", border: `1px solid ${BORDER}`, borderRadius: 6,
+        padding: "6px 14px", fontSize: 11, letterSpacing: 1, textTransform: "uppercase",
+        color: "#7a96b0", cursor: "pointer", fontFamily: "Poppins, sans-serif",
+      }}>
+        ↑ Restore Session
+      </button>
+      <input ref={restoreRef} type="file" accept=".json" style={{ display: "none" }} onChange={e => handleRestore(e.target.files[0])} />
+      {restoreError && <span style={{ fontSize: 11, color: "#b07a7a" }}>{restoreError}</span>}
+    </div>
+  );
+}
+
 // ── MAIN ─────────────────────────────────────────────────────────────────────
 
 export default function GoliathonApp() {
@@ -489,25 +565,28 @@ export default function GoliathonApp() {
   const [state, setState] = useState({});
   const merge = updates => setState(prev => ({ ...prev, ...updates }));
 
+  const handleRestore = (restoredStep, restoredState) => {
+    setState(restoredState);
+    setStep(restoredStep);
+  };
+
   return (
-    <div style={{ fontFamily: "Georgia, 'Times New Roman', serif", background: DARK, minHeight: "100vh", color: "#e8e0d0" }}>
+    <div style={{ fontFamily: "'Open Sans', sans-serif", background: "#00274d", minHeight: "100vh", width: "100%", color: "#e8eef4" }}>
       {/* Header */}
-      <div style={{ background: "linear-gradient(135deg, #1a1208, #0f0f0f)", borderBottom: `1px solid ${BORDER}`, padding: "24px 40px 0" }}>
+      <div style={{ background: "#00274d", borderBottom: "3px solid #ffc72c", padding: "20px 40px 0" }}>
         <div style={{ maxWidth: 1000, margin: "0 auto" }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 18, marginBottom: 28 }}>
-            <div style={{ width: 50, height: 50, background: `linear-gradient(135deg, ${GOLD}, #8a6a30)`, borderRadius: 8, display: "flex", alignItems: "center", justifyContent: "center", boxShadow: `0 0 24px ${GOLD}30`, flexShrink: 0 }}>
-              <svg width="26" height="26" viewBox="0 0 26 26" fill="none">
-                <path d="M13 2L3 7v8c0 6 4 11 10 12 6-1 10-6 10-12V7L13 2z" fill="none" stroke="#fff" strokeWidth="1.5"/>
-                <path d="M9 12l3 3 6-6" stroke="#fff" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
-              </svg>
-            </div>
+          <div style={{ display: "flex", alignItems: "center", gap: 20, marginBottom: 20 }}>
+            <img src="/getsafe-logo.png" alt="Get SAFE Logo" style={{ width: 64, height: 64, objectFit: "contain", flexShrink: 0 }} />
             <div>
-              <div style={{ fontSize: 10, letterSpacing: 4, color: GOLD, textTransform: "uppercase", marginBottom: 2 }}>Get SAFE · Academy of Life Planning</div>
-              <h1 style={{ margin: 0, fontSize: 28, fontWeight: 700, color: "#f5ead8", letterSpacing: "-0.5px" }}>GOLIATHON</h1>
+              <div style={{ fontSize: 10, letterSpacing: 4, color: "#ffc72c", textTransform: "uppercase", marginBottom: 2, fontFamily: "'Poppins', sans-serif" }}>Get SAFE · Academy of Life Planning</div>
+              <h1 style={{ margin: 0, fontSize: 30, fontWeight: 800, color: "#ffffff", letterSpacing: "-0.5px", fontFamily: "'Poppins', sans-serif" }}>GOLIATHON</h1>
             </div>
             <div style={{ marginLeft: "auto", textAlign: "right" }}>
-              <p style={{ margin: 0, fontSize: 12, color: "#6a5c48", fontStyle: "italic" }}>Turning survivors into strategists.</p>
-              <p style={{ margin: 0, fontSize: 12, color: "#4a3c2a", fontStyle: "italic" }}>Evidence into action.</p>
+              <p style={{ margin: 0, fontSize: 12, color: "#a0b4c8", fontStyle: "italic", fontFamily: "'Open Sans', sans-serif" }}>Turning survivors into strategists.</p>
+              <p style={{ margin: 0, fontSize: 12, color: "#7a96b0", fontStyle: "italic", fontFamily: "'Open Sans', sans-serif" }}>Evidence into action.</p>
+              <div style={{ marginTop: 8 }}>
+                <SaveRestore step={step} state={state} onRestore={handleRestore} />
+              </div>
             </div>
           </div>
           <StepIndicator current={step} />
@@ -515,17 +594,17 @@ export default function GoliathonApp() {
       </div>
 
       {/* Content */}
-      <div style={{ maxWidth: 1000, margin: "0 auto", padding: "48px 40px" }}>
+      <div style={{ maxWidth: 1000, margin: "0 auto", padding: "48px 40px", background: "#00274d" }}>
         {step === 1 && <Step1 onComplete={data => { merge(data); setStep(2); }} />}
         {step === 2 && <Step2 caseData={state.caseData} story={state.story} onComplete={data => { merge(data); setStep(3); }} />}
         {step === 3 && <Step3 caseData={state.caseData} story={state.story} onComplete={data => { merge(data); setStep(4); }} />}
-        {step === 4 && <Step4 caseData={state.caseData} story={state.story} docs={state.docs} />}
+        {step === 4 && <Step4 caseData={state.caseData} story={state.story} docs={state.docs} savedEvidenceLog={state.evidenceLog} onEvidenceUpdate={log => merge({ evidenceLog: log })} />}
       </div>
 
       {/* Footer */}
-      <div style={{ borderTop: "1px solid #1a1610", padding: "20px 40px", textAlign: "center" }}>
-        <p style={{ margin: 0, fontSize: 11, color: "#3a2e1a" }}>
-          Goliathon · Get SAFE (Support After Financial Exploitation) · Founded by Steve Conley · Academy of Life Planning · <a href="https://www.aolp.info/projects" style={{ color: "#4a3c2a" }}>aolp.info/projects</a> · Educational use only. Not legal, financial, or mental-health advice.
+      <div style={{ borderTop: "1px solid #003a6e", background: "#001e3d", padding: "20px 40px", textAlign: "center" }}>
+        <p style={{ margin: 0, fontSize: 11, color: "#7a96b0" }}>
+          Goliathon · Get SAFE (Support After Financial Exploitation) · Founded by Steve Conley · Academy of Life Planning · <a href="https://www.aolp.info/projects" style={{ color: "#a0b4c8" }}>aolp.info/projects</a> · Educational use only. Not legal, financial, or mental-health advice.
         </p>
       </div>
 
@@ -533,9 +612,9 @@ export default function GoliathonApp() {
         @keyframes pulse { 0%,100%{opacity:0.3;transform:scale(0.8)} 50%{opacity:1;transform:scale(1)} }
         *{box-sizing:border-box}
         ::-webkit-scrollbar{width:6px}
-        ::-webkit-scrollbar-track{background:#0f0f0f}
-        ::-webkit-scrollbar-thumb{background:#2a2218;border-radius:3px}
-        textarea::placeholder{color:#4a3c2a}
+        ::-webkit-scrollbar-track{background:#001e3d}
+        ::-webkit-scrollbar-thumb{background:#ffc72c40;border-radius:3px}
+        textarea::placeholder{color:#7a96b0}
       `}</style>
     </div>
   );

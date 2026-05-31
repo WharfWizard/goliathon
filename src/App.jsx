@@ -306,7 +306,7 @@ function ReadOnlyDossier({ dossier }) {
         </div>
       </div>
 
-      <div style={{ maxWidth: 900, margin: "0 auto", padding: "32px" }}>
+      <div style={{ maxWidth: 900, margin: "0 auto", padding: "16px" }}>
         <Panel title="Case Overview" icon="📋">
           {dossier.overview ? <p style={{ margin: 0, fontSize: 14, lineHeight: 1.8, color: LIGHT }}>{dossier.overview}</p> : <EmptyState text="No overview yet." />}
         </Panel>
@@ -716,31 +716,33 @@ Analyse this photographed document (${cameraPages.length} page${cameraPages.leng
     <div style={{ fontFamily: "'Open Sans', sans-serif", background: NAVY, minHeight: "100vh", width: "100%", color: LIGHT }}>
 
       {/* Header */}
-      <div style={{ background: NAVY, borderBottom: `3px solid ${YELLOW}`, padding: "16px 32px 0" }}>
+      <div style={{ background: NAVY, borderBottom: `3px solid ${YELLOW}`, padding: "16px 20px 0" }}>
         <div style={{ maxWidth: 1100, margin: "0 auto" }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 16, marginBottom: 16 }}>
-            <img src="/getsafe-logo.png" alt="Get SAFE" style={{ width: 56, height: 56, objectFit: "contain", flexShrink: 0 }} />
-            <div>
-              <div style={{ fontSize: 10, letterSpacing: 4, color: YELLOW, textTransform: "uppercase", fontFamily: "'Poppins', sans-serif", marginBottom: 2 }}>Get SAFE · Academy of Life Planning</div>
-              <h1 style={{ margin: 0, fontFamily: "'Poppins', sans-serif", fontSize: 28, fontWeight: 800, color: WHITE, letterSpacing: "-0.5px" }}>GOLIATHON</h1>
+          {/* Top row: logo + title */}
+          <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 12 }}>
+            <img src="/getsafe-logo.png" alt="Get SAFE" style={{ width: 44, height: 44, objectFit: "contain", flexShrink: 0 }} />
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div style={{ fontSize: 9, letterSpacing: 3, color: YELLOW, textTransform: "uppercase", fontFamily: "'Poppins', sans-serif", marginBottom: 1, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>Get SAFE · Academy of Life Planning</div>
+              <h1 style={{ margin: 0, fontFamily: "'Poppins', sans-serif", fontSize: 24, fontWeight: 800, color: WHITE, letterSpacing: "-0.5px" }}>GOLIATHON</h1>
             </div>
-            <div style={{ marginLeft: "auto", display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap", justifyContent: "flex-end" }}>
-                {dossier && saved && <Tag color="#7e9e82">✓ Saved</Tag>}
-                <Btn small variant="subtle" onClick={handleSaveLocal}>💾 Save</Btn>
-                <label style={{ cursor: "pointer" }}>
-                  <Btn small variant="subtle" onClick={() => restoreRef.current?.click()}>📂 Restore</Btn>
-                  <input ref={restoreRef} type="file" accept=".json" style={{ display: "none" }} onChange={handleRestoreLocal} />
-                </label>
-                {dossier && <Btn small variant="subtle" onClick={handleReset}>↺ Reset</Btn>}
-                {dossier && <Btn small variant="ghost" onClick={() => setShowShare(true)}>🔗 Share</Btn>}
-                {dossier && <Btn small onClick={() => setShowDownload(true)}>↓ Download</Btn>}
-              </div>
+            {dossier && saved && <Tag color="#7e9e82">✓</Tag>}
+          </div>
+          {/* Action buttons row */}
+          <div style={{ display: "flex", gap: 8, marginBottom: 12, flexWrap: "wrap" }}>
+            <Btn small variant="subtle" onClick={handleSaveLocal}>💾 Save</Btn>
+            <label style={{ cursor: "pointer" }}>
+              <Btn small variant="subtle" onClick={() => restoreRef.current?.click()}>📂 Restore</Btn>
+              <input ref={restoreRef} type="file" accept=".json" style={{ display: "none" }} onChange={handleRestoreLocal} />
+            </label>
+            {dossier && <Btn small variant="subtle" onClick={handleReset}>↺ Reset</Btn>}
+            {dossier && <Btn small variant="ghost" onClick={() => setShowShare(true)}>🔗 Share</Btn>}
+            {dossier && <Btn small onClick={() => setShowDownload(true)}>↓ Download</Btn>}
           </div>
         </div>
       </div>
 
       {/* Main */}
-      <div style={{ maxWidth: 1100, margin: "0 auto", padding: "32px" }}>
+      <div style={{ maxWidth: 1100, margin: "0 auto", padding: "16px" }}>
 
         {/* Upload Zone */}
         <div
@@ -751,7 +753,7 @@ Analyse this photographed document (${cameraPages.length} page${cameraPages.leng
           style={{
             border: `2px dashed ${dragOver ? YELLOW : processing ? YELLOW + "60" : BORDER}`,
             borderRadius: 16,
-            padding: "40px 32px",
+            padding: "28px 16px",
             textAlign: "center",
             cursor: processing ? "not-allowed" : "pointer",
             background: dragOver ? "#001e3d" : processing ? "#001830" : "transparent",
@@ -813,7 +815,7 @@ Analyse this photographed document (${cameraPages.length} page${cameraPages.leng
         )}
 
         {dossier && (
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(320px, 1fr))", gap: 16 }}>
             {/* Left column */}
             <div>
               {dossier.case_title && (

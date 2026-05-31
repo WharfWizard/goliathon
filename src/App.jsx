@@ -127,7 +127,7 @@ function buildFullDossierText(dossier) {
     dossier.next_steps || "",
     ``,
     `─────────────────────────────────────────`,
-    `Goliathon · Get SAFE · www.get-safe.org.uk`,
+    `Goliathon · Get SAFE · www.goliathon.app`,
     `Educational use only. Not legal advice.`,
   ];
   return lines.join("\n");
@@ -680,7 +680,7 @@ Analyse this evidence and return ONLY valid JSON with no preamble or markdown:
       {/* Footer */}
       <div style={{ borderTop: `1px solid ${BORDER}`, padding: "20px 32px", textAlign: "center", marginTop: 32 }}>
         <p style={{ margin: 0, fontSize: 11, color: "#5a7a96" }}>
-          Goliathon · Get SAFE (Support After Financial Exploitation) · Founded by Steve Conley · Academy of Life Planning · <a href="https://www.get-safe.org.uk/" style={{ color: "#7a96b0" }}>www.get-safe.org.uk</a> · Educational use only. Not legal, financial, or mental-health advice.
+          Goliathon · Get SAFE (Support After Financial Exploitation) · Founded by Steve Conley · Academy of Life Planning · <a href="https://www.goliathon.app/" style={{ color: "#7a96b0" }}>www.goliathon.app</a> · Educational use only. Not legal, financial, or mental-health advice.
         </p>
       </div>
 

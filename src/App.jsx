@@ -336,6 +336,7 @@ export default function GoliathonApp() {
   const [showDownload, setShowDownload] = useState(false);
   const [shareId] = useState(() => generateShareId());
   const [saved, setSaved] = useState(false);
+  const isSavedRef = useRef(false);
   const [readOnly, setReadOnly] = useState(false);
   const [readOnlyDossier, setReadOnlyDossier] = useState(null);
   const fileRef = useRef(null);
@@ -376,6 +377,7 @@ export default function GoliathonApp() {
     if (window.confirm("Are you sure you want to reset? This will clear your current dossier. Make sure you have saved first.")) {
       setDossier(null);
       setSaved(false);
+      isSavedRef.current = false;
     }
   }, []);
 
@@ -395,9 +397,10 @@ export default function GoliathonApp() {
     setDossier(newDossier);
     setSaved(false);
     try {
-      await saveDossier({ ...newDossier, share_id: shareId, _saved: !!newDossier._saved });
+      const payload = { ...newDossier, share_id: shareId, _saved: isSavedRef.current };
+      await saveDossier(payload);
+      isSavedRef.current = true;
       setSaved(true);
-      setDossier(prev => ({ ...prev, _saved: true }));
     } catch (e) {
       console.error("Save error:", e);
     }

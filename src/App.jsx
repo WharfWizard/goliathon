@@ -1,6 +1,6 @@
-import { useState, useRef } from "react";
+import { useState, useRef, useCallback, useEffect } from "react";
 
-// Inject Google Fonts at runtime
+// ── FONTS ────────────────────────────────────────────────────────────────────
 if (!document.getElementById("goliathon-fonts")) {
   const link = document.createElement("link");
   link.id = "goliathon-fonts";
@@ -9,614 +9,692 @@ if (!document.getElementById("goliathon-fonts")) {
   document.head.appendChild(link);
 }
 
-const GOLD = "#ffc72c";
-const DARK = "#00274d";
+// ── CONSTANTS ────────────────────────────────────────────────────────────────
+const NAVY = "#00274d";
+const YELLOW = "#ffc72c";
+const WHITE = "#ffffff";
+const GREY = "#555555";
 const PANEL = "#002a57";
 const BORDER = "#003a6e";
+const LIGHT = "#e8eef4";
 
-const SYSTEM = `You are the Goliathon AI — created by Steve Conley, Founder of Get SAFE (Support After Financial Exploitation) and the Academy of Life Planning. Goliathon is a "battle mech for justice": an AI-powered system that turns survivors of financial exploitation into strategic citizen investigators.
+const SYSTEM = `You are the Goliathon AI — created by Steve Conley, Founder of Get SAFE (Support After Financial Exploitation) and the Academy of Life Planning.
 
-Your methodology: Recognition → Organisation → Action
-- Every output must be calm, professional, precise, and empowering
-- Never give legal, financial, or mental-health advice — always recommend qualified professionals
-- Write in plain English; avoid jargon
-- Always write from the survivor's perspective with dignity and strategic clarity
-- File notes format: Date / Event / Issue / Evidence / Impact / Next Action
-- Letters: formal, evidence-based, measured tone
-- Witness statements: first person, chronological, factual
-- Notion outputs: structured markdown with headers, tables, bullet points ready for Notion import
+Goliathon automatically builds a professional evidence dossier for survivors of financial exploitation. Your role is to analyse every piece of evidence uploaded and extract structured information to build the dossier.
 
-This programme is educational and peer-support oriented only.`;
+Core values: dignity, precision, clarity, empowerment. Never give legal, financial, or mental-health advice. Always recommend qualified professionals where appropriate. Write in plain English. Be warm, calm, and strategic.
 
-function downloadMd(filename, content) {
-  const blob = new Blob([content], { type: "text/markdown" });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement("a");
-  a.href = url; a.download = filename; a.click();
-  URL.revokeObjectURL(url);
+When analysing evidence, always extract:
+- What type of document this is
+- Key facts, dates, names, and amounts
+- What it proves or suggests
+- Any red flags (evasion, contradictions, omissions)
+- Regulatory implications
+- How it updates the overall case narrative`;
+
+// ── HELPERS ──────────────────────────────────────────────────────────────────
+function generateShareId() {
+  return Math.random().toString(36).substring(2, 10) + Math.random().toString(36).substring(2, 10);
 }
 
-function Card({ children, style = {} }) {
-  return <div style={{ background: "#002a57", border: "1px solid #003a6e", borderRadius: 12, padding: 24, ...style }}>{children}</div>;
+function formatDate(iso) {
+  if (!iso) return "";
+  return new Date(iso).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" });
 }
 
-function Btn({ children, onClick, disabled, variant = "primary", small = false }) {
-  const styles = {
-    primary: { background: `linear-gradient(135deg, ${GOLD}, #e6a800)`, color: "#00274d", border: "none" },
-    ghost: { background: "transparent", color: GOLD, border: `1px solid ${GOLD}50` },
-    subtle: { background: "#001e3d", color: "#a0b4c8", border: `1px solid ${BORDER}` },
-  };
-  return (
-    <button onClick={onClick} disabled={disabled} style={{
-      ...styles[variant], borderRadius: 8,
-      padding: small ? "7px 14px" : "12px 24px",
-      fontSize: small ? 11 : 13, letterSpacing: 1,
-      textTransform: "uppercase", fontWeight: 700,
-      cursor: disabled ? "not-allowed" : "pointer",
-      opacity: disabled ? 0.4 : 1, fontFamily: "Poppins, sans-serif",
-      transition: "opacity 0.2s",
-    }}>{children}</button>
-  );
-}
-
-function Spinner() {
-  return (
-    <div style={{ display: "flex", gap: 6, alignItems: "center", padding: "14px 0" }}>
-      {[0,1,2].map(i => <div key={i} style={{ width: 8, height: 8, background: GOLD, borderRadius: "50%", animation: `pulse 1.2s ease-in-out ${i*0.2}s infinite` }} />)}
-      <span style={{ color: "#7a96b0", fontSize: 13, marginLeft: 8, fontStyle: "italic" }}>Goliathon is working…</span>
-    </div>
-  );
-}
-
-function Label({ children, color = GOLD }) {
-  return <div style={{ fontSize: 10, letterSpacing: 3, color, textTransform: "uppercase", marginBottom: 10 }}>{children}</div>;
-}
-
-function DownloadRow({ label, filename, content }) {
-  if (!content) return null;
-  return (
-    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "10px 0", borderBottom: `1px solid ${BORDER}` }}>
-      <span style={{ fontSize: 13, color: "#e8eef4" }}>{label}</span>
-      <Btn small variant="ghost" onClick={() => downloadMd(filename, content)}>↓ Download .md</Btn>
-    </div>
-  );
-}
-
-async function callClaude(messages) {
+async function callClaude(messages, systemOverride) {
   const res = await fetch("/api/claude", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ model: "claude-sonnet-4-20250514", max_tokens: 1000, system: SYSTEM, messages }),
+    body: JSON.stringify({
+      model: "claude-sonnet-4-20250514",
+      max_tokens: 1000,
+      system: systemOverride || SYSTEM,
+      messages,
+    }),
   });
   const data = await res.json();
   return data.content?.[0]?.text || "";
 }
 
-// ── STEP INDICATOR ──────────────────────────────────────────────────────────
+async function saveDossier(dossier) {
+  const res = await fetch("/api/dossier", {
+    method: dossier._saved ? "PUT" : "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(dossier),
+  });
+  return res.json();
+}
 
-function StepIndicator({ current }) {
-  const steps = ["Your Story", "Notion Setup", "Living Documents", "Add Evidence"];
+async function loadDossier(shareId) {
+  const res = await fetch(`/api/dossier?share_id=${shareId}`);
+  if (!res.ok) return null;
+  return res.json();
+}
+
+function fileToBase64(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result.split(",")[1]);
+    reader.onerror = reject;
+    reader.readAsDataURL(file);
+  });
+}
+
+// ── DOWNLOAD HELPERS ─────────────────────────────────────────────────────────
+function downloadText(filename, content) {
+  const blob = new Blob([content], { type: "text/plain" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a"); a.href = url; a.download = filename; a.click();
+  URL.revokeObjectURL(url);
+}
+
+function buildFullDossierText(dossier) {
+  const lines = [
+    `GOLIATHON EVIDENCE DOSSIER`,
+    `Get SAFE (Support After Financial Exploitation)`,
+    `Generated: ${formatDate(new Date().toISOString())}`,
+    ``,
+    `═══════════════════════════════════════════`,
+    `CASE OVERVIEW`,
+    `═══════════════════════════════════════════`,
+    dossier.overview || "",
+    ``,
+    `═══════════════════════════════════════════`,
+    `CHRONOLOGICAL TIMELINE`,
+    `═══════════════════════════════════════════`,
+    ...(dossier.timeline || []).map((t, i) => `${i + 1}. [${t.date || "Date unknown"}] ${t.event}\n   Evidence: ${t.evidence || "See library"}`),
+    ``,
+    `═══════════════════════════════════════════`,
+    `WITNESS STATEMENT`,
+    `═══════════════════════════════════════════`,
+    dossier.witness_statement || "",
+    ``,
+    `═══════════════════════════════════════════`,
+    `EVIDENCE LIBRARY (${(dossier.evidence || []).length} items)`,
+    `═══════════════════════════════════════════`,
+    ...(dossier.evidence || []).map((e, i) => [
+      ``,
+      `[${String(i + 1).padStart(3, "0")}] ${e.title}`,
+      `Date: ${e.date || "Unknown"} | Type: ${e.type || "Document"}`,
+      `Summary: ${e.summary}`,
+      e.red_flags ? `Red Flags: ${e.red_flags}` : "",
+    ].filter(Boolean).join("\n")),
+    ``,
+    `═══════════════════════════════════════════`,
+    `NEXT STEPS`,
+    `═══════════════════════════════════════════`,
+    dossier.next_steps || "",
+    ``,
+    `─────────────────────────────────────────`,
+    `Goliathon · Get SAFE · www.get-safe.org.uk`,
+    `Educational use only. Not legal advice.`,
+  ];
+  return lines.join("\n");
+}
+
+// ── UI COMPONENTS ─────────────────────────────────────────────────────────────
+
+function Spinner({ small = false }) {
   return (
-    <div style={{ display: "flex", alignItems: "center", marginBottom: 40 }}>
-      {steps.map((s, i) => {
-        const n = i + 1; const done = n < current; const active = n === current;
-        return (
-          <div key={n} style={{ display: "flex", alignItems: "center", flex: i < steps.length - 1 ? 1 : "none" }}>
-            <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 6 }}>
-              <div style={{
-                width: 36, height: 36, borderRadius: "50%",
-                background: done ? GOLD : active ? GOLD : "#003a6e",
-                border: done || active ? "none" : `1px solid ${BORDER}`,
-                display: "flex", alignItems: "center", justifyContent: "center",
-                fontSize: 13, fontWeight: 700, color: done || active ? "#00274d" : "#5a7a96",
-              }}>{done ? "✓" : n}</div>
-              <span style={{ fontSize: 10, letterSpacing: 1, textTransform: "uppercase", color: active ? GOLD : done ? "#a0b4c8" : "#004080", whiteSpace: "nowrap" }}>{s}</span>
-            </div>
-            {i < steps.length - 1 && <div style={{ flex: 1, height: 1, background: done ? GOLD : "#003a6e", margin: "0 8px", marginBottom: 22 }} />}
-          </div>
-        );
-      })}
-    </div>
+    <span style={{ display: "inline-flex", gap: 4, alignItems: "center" }}>
+      {[0, 1, 2].map(i => (
+        <span key={i} style={{ width: small ? 5 : 7, height: small ? 5 : 7, background: YELLOW, borderRadius: "50%", display: "inline-block", animation: `pulse 1.2s ease-in-out ${i * 0.2}s infinite` }} />
+      ))}
+    </span>
   );
 }
 
-// ── STEP 1: STORY ────────────────────────────────────────────────────────────
-
-function Step1({ onComplete }) {
-  const [story, setStory] = useState("");
-  const [loading, setLoading] = useState(false);
-
-  const handleSubmit = async () => {
-    if (!story.trim() || loading) return;
-    setLoading(true);
-    try {
-      const raw = await callClaude([{ role: "user", content: `Extract case data from this survivor's account. Return ONLY valid JSON with no preamble or markdown fences:
-{"caseTitle":"short title e.g. 'Smith v Lloyds – Pension Mis-selling'","parties":{"claimant":"name or Not specified","respondents":["list"]},"dateRange":"earliest–latest or Unknown","coreIssues":["3-6 key issues"],"harmSuffered":["financial/emotional/professional harms"],"regulatoryBodies":["FCA/FOS/ICO etc if mentioned"],"urgency":"High or Medium or Low","recommendedSessions":["relevant session names"]}
-
-Story: ${story}` }]);
-      let caseData;
-      try { caseData = JSON.parse(raw); }
-      catch { caseData = { caseTitle: "My Case", parties: { claimant: "Not specified", respondents: [] }, dateRange: "Unknown", coreIssues: ["See narrative"], harmSuffered: [], regulatoryBodies: [], urgency: "Medium", recommendedSessions: ["Session 1"] }; }
-      onComplete({ story, caseData });
-    } catch { alert("Something went wrong. Please try again."); }
-    setLoading(false);
+function Btn({ children, onClick, disabled, variant = "primary", small = false, fullWidth = false }) {
+  const base = { borderRadius: 8, fontFamily: "'Poppins', sans-serif", fontWeight: 700, cursor: disabled ? "not-allowed" : "pointer", opacity: disabled ? 0.4 : 1, transition: "all 0.2s", border: "none", letterSpacing: 0.5, display: "inline-flex", alignItems: "center", gap: 6, whiteSpace: "nowrap" };
+  const variants = {
+    primary: { background: YELLOW, color: NAVY, padding: small ? "7px 16px" : "11px 24px", fontSize: small ? 12 : 13 },
+    ghost: { background: "transparent", color: YELLOW, border: `1px solid ${YELLOW}50`, padding: small ? "6px 14px" : "10px 22px", fontSize: small ? 11 : 13 },
+    subtle: { background: PANEL, color: LIGHT, border: `1px solid ${BORDER}`, padding: small ? "6px 14px" : "10px 22px", fontSize: small ? 11 : 13 },
+    danger: { background: "#c0392b20", color: "#e57373", border: "1px solid #e5737340", padding: small ? "6px 14px" : "10px 22px", fontSize: small ? 11 : 13 },
   };
+  return <button onClick={onClick} disabled={disabled} style={{ ...base, ...variants[variant], width: fullWidth ? "100%" : "auto" }}>{children}</button>;
+}
 
+function Panel({ title, icon, children, action }) {
   return (
-    <div>
-      <h2 style={{ margin: "0 0 8px", fontSize: 26, color: "#ffffff", fontFamily: "'Poppins', sans-serif", fontWeight: 700 }}>Tell me what happened.</h2>
-      <p style={{ color: "#a0b4c8", fontSize: 15, marginBottom: 28, lineHeight: 1.7 }}>Write in your own words — as much or as little as you feel ready to share. There is no wrong way to begin. Goliathon will help you turn this into structured, strategic power.</p>
-      <Card style={{ marginBottom: 20 }}>
-        <textarea value={story} onChange={e => setStory(e.target.value)}
-          placeholder="Start with what happened, when it started, who was involved, and how it has affected you. You can always add more detail later as you upload evidence…"
-          style={{ width: "100%", minHeight: 280, background: "transparent", border: "none", color: "#ffffff", fontSize: 15, lineHeight: 1.9, resize: "vertical", outline: "none", fontFamily: "Poppins, sans-serif", boxSizing: "border-box" }} />
-      </Card>
-      <div style={{ display: "flex", alignItems: "center", gap: 16, flexWrap: "wrap" }}>
-        <Btn onClick={handleSubmit} disabled={story.trim().length < 50 || loading}>{loading ? "Analysing…" : "Begin My Case →"}</Btn>
-        <span style={{ fontSize: 12, color: "#5a7a96" }}>Min. 50 characters · {story.length} typed</span>
+    <div style={{ background: PANEL, border: `1px solid ${BORDER}`, borderRadius: 12, overflow: "hidden", marginBottom: 16 }}>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "14px 20px", borderBottom: `1px solid ${BORDER}`, background: "#001e3d" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+          <span style={{ fontSize: 18 }}>{icon}</span>
+          <span style={{ fontFamily: "'Poppins', sans-serif", fontWeight: 700, fontSize: 14, color: WHITE }}>{title}</span>
+        </div>
+        {action}
       </div>
-      {loading && <Spinner />}
+      <div style={{ padding: 20 }}>{children}</div>
     </div>
   );
 }
 
-// ── STEP 2: NOTION ───────────────────────────────────────────────────────────
+function EmptyState({ text }) {
+  return <p style={{ color: "#5a7a96", fontSize: 13, fontStyle: "italic", margin: 0 }}>{text}</p>;
+}
 
-function Step2({ caseData, story, onComplete }) {
-  const [notionMd, setNotionMd] = useState("");
-  const [loading, setLoading] = useState(false);
-  const [generated, setGenerated] = useState(false);
-  const urgencyColor = { High: "#b07a7a", Medium: GOLD, Low: "#7e9e82" }[caseData.urgency] || GOLD;
+function Tag({ children, color = YELLOW }) {
+  return <span style={{ background: color + "20", color, border: `1px solid ${color}40`, borderRadius: 20, padding: "2px 10px", fontSize: 11, fontWeight: 600, fontFamily: "'Poppins', sans-serif" }}>{children}</span>;
+}
 
-  const generate = async () => {
-    setLoading(true);
-    const md = await callClaude([{ role: "user", content: `Generate a complete Notion workspace in clean Markdown importable to Notion.
+// ── SHARE MODAL ───────────────────────────────────────────────────────────────
 
-Case: ${JSON.stringify(caseData)}
-Story: ${story.substring(0, 500)}
+function ShareModal({ shareId, onClose }) {
+  const url = `${window.location.origin}/dossier/${shareId}`;
+  const [copied, setCopied] = useState(false);
 
-Include these sections:
-# Case Dashboard — title, status, urgency, parties table, key contacts
-# Case Summary — narrative overview
-# Timeline / Chronology — table: Date | Event | Evidence | Impact
-# Evidence Library — table: Ref | Document | Date | Type | Tags | Filed
-# Correspondence Tracker — table: Date | From | To | Summary | Action | Status
-# File Notes — template: Date / Event / Issue / Evidence / Impact / Next Action
-# Legal Basis Tracker — table: Regulation | Duty | Alleged Breach | Evidence | Status
-# Next Steps — prioritised action list
-
-Footer: "Built with Goliathon by Get SAFE · https://www.get-safe.org.uk/
- · Educational use only. Not legal advice."` }]);
-    setNotionMd(md); setGenerated(true); setLoading(false);
+  const copy = () => {
+    navigator.clipboard.writeText(url);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
   };
 
-  const slug = caseData.caseTitle.replace(/[^a-z0-9]/gi, "_");
+  return (
+    <div style={{ position: "fixed", inset: 0, background: "#000000cc", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 1000 }}>
+      <div style={{ background: PANEL, border: `1px solid ${BORDER}`, borderRadius: 16, padding: 36, maxWidth: 480, width: "90%", boxShadow: "0 24px 80px #00000080" }}>
+        <div style={{ textAlign: "center", marginBottom: 24 }}>
+          <div style={{ fontSize: 40, marginBottom: 12 }}>🔗</div>
+          <h3 style={{ margin: 0, fontFamily: "'Poppins', sans-serif", color: WHITE, fontSize: 20, fontWeight: 700 }}>Share Your Dossier</h3>
+          <p style={{ color: "#7a96b0", fontSize: 13, margin: "8px 0 0", lineHeight: 1.6 }}>Anyone with this link can view your dossier in read-only mode. Only share with people you trust.</p>
+        </div>
+        <div style={{ background: "#001e3d", border: `1px solid ${BORDER}`, borderRadius: 8, padding: "12px 16px", marginBottom: 16, wordBreak: "break-all", fontSize: 13, color: YELLOW, fontFamily: "monospace" }}>{url}</div>
+        <div style={{ display: "flex", gap: 10 }}>
+          <Btn onClick={copy} fullWidth>{copied ? "✓ Copied!" : "Copy Link"}</Btn>
+          <Btn variant="subtle" onClick={onClose}>Close</Btn>
+        </div>
+        <p style={{ margin: "16px 0 0", fontSize: 11, color: "#5a7a96", textAlign: "center" }}>This link always shows the latest version of your dossier.</p>
+      </div>
+    </div>
+  );
+}
+
+// ── DOWNLOAD MODAL ────────────────────────────────────────────────────────────
+
+function DownloadModal({ dossier, onClose }) {
+  const slug = (dossier.case_title || "dossier").replace(/[^a-z0-9]/gi, "_");
+
+  const options = [
+    { label: "Complete Dossier", desc: "All sections — overview, timeline, statement, evidence, next steps", icon: "📁", action: () => downloadText(`${slug}_Complete_Dossier.txt`, buildFullDossierText(dossier)) },
+    { label: "Case Overview", desc: "The case summary and context", icon: "📋", action: () => downloadText(`${slug}_Overview.txt`, dossier.overview || "") },
+    { label: "Timeline", desc: "Chronological sequence of all events", icon: "📅", action: () => downloadText(`${slug}_Timeline.txt`, (dossier.timeline || []).map((t, i) => `${i + 1}. [${t.date || "Unknown"}] ${t.event}`).join("\n")) },
+    { label: "Witness Statement", desc: "First-person account", icon: "📝", action: () => downloadText(`${slug}_Witness_Statement.txt`, dossier.witness_statement || "") },
+    { label: "Evidence Library", desc: "All evidence items with cover notes", icon: "🗂️", action: () => downloadText(`${slug}_Evidence_Library.txt`, (dossier.evidence || []).map((e, i) => `[${String(i + 1).padStart(3, "0")}] ${e.title}\n${e.summary}\n`).join("\n")) },
+    { label: "Next Steps", desc: "Priority actions and recommendations", icon: "📌", action: () => downloadText(`${slug}_Next_Steps.txt`, dossier.next_steps || "") },
+  ];
 
   return (
-    <div>
-      <h2 style={{ margin: "0 0 8px", fontSize: 26, color: "#ffffff", fontFamily: "'Poppins', sans-serif", fontWeight: 700 }}>Your Notion Workspace</h2>
-      <p style={{ color: "#a0b4c8", fontSize: 15, marginBottom: 24, lineHeight: 1.7 }}>Your complete digital evidence fortress — structured for press, court, and MP readiness.</p>
-
-      <Card style={{ marginBottom: 24, borderColor: GOLD+"30" }}>
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 24 }}>
-          <div>
-            <Label>Case Title</Label>
-            <p style={{ margin: "0 0 20px", fontSize: 16, color: "#ffffff", fontWeight: 700 }}>{caseData.caseTitle}</p>
-            <Label>Date Range</Label>
-            <p style={{ margin: "0 0 20px", fontSize: 14, color: "#e8eef4" }}>{caseData.dateRange}</p>
-            <Label>Urgency</Label>
-            <span style={{ fontSize: 12, padding: "3px 12px", borderRadius: 20, background: urgencyColor+"25", color: urgencyColor, border: `1px solid ${urgencyColor}50` }}>{caseData.urgency}</span>
+    <div style={{ position: "fixed", inset: 0, background: "#000000cc", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 1000 }}>
+      <div style={{ background: PANEL, border: `1px solid ${BORDER}`, borderRadius: 16, padding: 36, maxWidth: 520, width: "90%", boxShadow: "0 24px 80px #00000080", maxHeight: "90vh", overflowY: "auto" }}>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 24 }}>
+          <h3 style={{ margin: 0, fontFamily: "'Poppins', sans-serif", color: WHITE, fontSize: 20, fontWeight: 700 }}>Download Dossier</h3>
+          <Btn variant="subtle" small onClick={onClose}>✕</Btn>
+        </div>
+        {options.map((o, i) => (
+          <div key={i} onClick={o.action} style={{ display: "flex", alignItems: "center", gap: 16, padding: "14px 16px", background: "#001e3d", border: `1px solid ${BORDER}`, borderRadius: 10, marginBottom: 10, cursor: "pointer", transition: "all 0.15s" }}
+            onMouseEnter={e => e.currentTarget.style.borderColor = YELLOW + "60"}
+            onMouseLeave={e => e.currentTarget.style.borderColor = BORDER}>
+            <span style={{ fontSize: 24, flexShrink: 0 }}>{o.icon}</span>
+            <div style={{ flex: 1 }}>
+              <div style={{ fontFamily: "'Poppins', sans-serif", fontWeight: 700, color: WHITE, fontSize: 14, marginBottom: 2 }}>{o.label}</div>
+              <div style={{ fontSize: 12, color: "#7a96b0" }}>{o.desc}</div>
+            </div>
+            <span style={{ color: YELLOW, fontSize: 18 }}>↓</span>
           </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// ── READ-ONLY DOSSIER VIEW ────────────────────────────────────────────────────
+
+function ReadOnlyDossier({ dossier }) {
+  const [showDownload, setShowDownload] = useState(false);
+
+  return (
+    <div style={{ fontFamily: "'Open Sans', sans-serif", background: NAVY, minHeight: "100vh", color: LIGHT }}>
+      <div style={{ background: NAVY, borderBottom: `3px solid ${YELLOW}`, padding: "20px 32px" }}>
+        <div style={{ maxWidth: 900, margin: "0 auto", display: "flex", alignItems: "center", gap: 16 }}>
+          <img src="/getsafe-logo.png" alt="Get SAFE" style={{ width: 52, height: 52, objectFit: "contain" }} />
           <div>
-            <Label>Core Issues Identified</Label>
-            {(caseData.coreIssues||[]).map((issue, i) => (
-              <div key={i} style={{ display: "flex", gap: 8, marginBottom: 8 }}>
-                <div style={{ width: 5, height: 5, background: GOLD, borderRadius: "50%", marginTop: 7, flexShrink: 0 }} />
-                <span style={{ fontSize: 13, color: "#e8eef4", lineHeight: 1.6 }}>{issue}</span>
+            <div style={{ fontSize: 10, letterSpacing: 3, color: YELLOW, textTransform: "uppercase", fontFamily: "'Poppins', sans-serif" }}>Get SAFE · Goliathon Evidence Dossier</div>
+            <h1 style={{ margin: 0, fontFamily: "'Poppins', sans-serif", fontSize: 22, fontWeight: 800, color: WHITE }}>{dossier.case_title || "Evidence Dossier"}</h1>
+          </div>
+          <div style={{ marginLeft: "auto", display: "flex", gap: 10, alignItems: "center" }}>
+            <Tag>Read Only</Tag>
+            <Btn small onClick={() => setShowDownload(true)}>↓ Download</Btn>
+          </div>
+        </div>
+      </div>
+
+      <div style={{ maxWidth: 900, margin: "0 auto", padding: "32px" }}>
+        <Panel title="Case Overview" icon="📋">
+          {dossier.overview ? <p style={{ margin: 0, fontSize: 14, lineHeight: 1.8, color: LIGHT }}>{dossier.overview}</p> : <EmptyState text="No overview yet." />}
+        </Panel>
+
+        <Panel title="Timeline" icon="📅">
+          {(dossier.timeline || []).length === 0 ? <EmptyState text="No timeline entries yet." /> :
+            (dossier.timeline || []).map((t, i) => (
+              <div key={i} style={{ display: "flex", gap: 16, marginBottom: 16, paddingBottom: 16, borderBottom: i < dossier.timeline.length - 1 ? `1px solid ${BORDER}` : "none" }}>
+                <div style={{ width: 36, height: 36, background: YELLOW, borderRadius: "50%", display: "flex", alignItems: "center", justifyContent: "center", fontFamily: "'Poppins', sans-serif", fontWeight: 700, fontSize: 12, color: NAVY, flexShrink: 0 }}>{i + 1}</div>
+                <div>
+                  <div style={{ fontSize: 11, color: YELLOW, fontWeight: 600, marginBottom: 3 }}>{t.date || "Date unknown"}</div>
+                  <div style={{ fontSize: 14, color: LIGHT, lineHeight: 1.6 }}>{t.event}</div>
+                  {t.evidence && <div style={{ fontSize: 12, color: "#7a96b0", marginTop: 4 }}>Evidence: {t.evidence}</div>}
+                </div>
               </div>
             ))}
-          </div>
-        </div>
-      </Card>
+        </Panel>
 
-      {!generated ? (
-        <div style={{ display: "flex", gap: 16, alignItems: "center", flexWrap: "wrap" }}>
-          <Btn onClick={generate} disabled={loading}>{loading ? "Building workspace…" : "Generate Notion Workspace →"}</Btn>
-          {loading && <Spinner />}
-        </div>
-      ) : (
-        <div>
-          <Card style={{ marginBottom: 16, background: "#00274d" }}>
-            <pre style={{ margin: 0, fontSize: 12, color: "#7a96b0", lineHeight: 1.7, whiteSpace: "pre-wrap", maxHeight: 260, overflowY: "auto" }}>{notionMd.substring(0, 900)}…</pre>
-          </Card>
-          <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
-            <Btn onClick={() => downloadMd(`${slug}_Notion_Workspace.md`, notionMd)}>↓ Download Notion Workspace</Btn>
-            <Btn variant="ghost" onClick={() => onComplete({ notionMd })}>Continue → Living Documents</Btn>
-          </div>
-          <p style={{ fontSize: 12, color: "#5a7a96", marginTop: 12 }}>Import: Notion → New Page → Import → Markdown & CSV</p>
-        </div>
-      )}
-    </div>
-  );
-}
+        <Panel title="Witness Statement" icon="📝">
+          {dossier.witness_statement ? <p style={{ margin: 0, fontSize: 14, lineHeight: 1.9, color: LIGHT, whiteSpace: "pre-wrap" }}>{dossier.witness_statement}</p> : <EmptyState text="No witness statement yet." />}
+        </Panel>
 
-// ── STEP 3: LIVING DOCS ──────────────────────────────────────────────────────
-
-function Step3({ caseData, story, onComplete }) {
-  const [docs, setDocs] = useState({ summary: "", timeline: "", witness: "" });
-  const [loading, setLoading] = useState(false);
-  const [generated, setGenerated] = useState(false);
-  const slug = caseData.caseTitle.replace(/[^a-z0-9]/gi, "_");
-
-  const generate = async () => {
-    setLoading(true);
-    try {
-      const raw = await callClaude([{ role: "user", content: `Generate three documents separated by "---SPLIT---" only (no other separators).
-
-Case: ${JSON.stringify(caseData)}
-Story: ${story.substring(0, 800)}
-
-Doc 1 — CASE FILE SUMMARY (markdown):
-# Case File Summary
-Professional third-person overview. Include: parties, period, core issues, harm, regulatory context, current status, priority actions. Header: "Prepared using Goliathon · Get SAFE · ${new Date().toLocaleDateString("en-GB")}"
-
----SPLIT---
-
-Doc 2 — CHRONOLOGICAL TIMELINE (markdown):
-# Case Timeline
-Table with columns: Date | Event | Evidence Available | Significance
-Extract every date and event. Add "Evidence pending" rows where gaps exist.
-
----SPLIT---
-
-Doc 3 — WITNESS STATEMENT (markdown):
-# Witness Statement
-First-person, formal, factual, dignified. Begin: "I, [name], make this statement in relation to..."
-Cover: what happened, when, who was involved, actions taken, how it affected me.
-End with declaration of truth.` }]);
-
-      const parts = raw.split("---SPLIT---");
-      const newDocs = { summary: parts[0]?.trim()||"", timeline: parts[1]?.trim()||"", witness: parts[2]?.trim()||"" };
-      setDocs(newDocs); setGenerated(true);
-    } catch { alert("Error generating documents. Please try again."); }
-    setLoading(false);
-  };
-
-  const docDefs = [
-    { key: "summary", icon: "📋", label: "Case File Summary", desc: "Professional overview for regulators, MPs, or press." },
-    { key: "timeline", icon: "📅", label: "Chronological Timeline", desc: "Every event in sequence, ready for a legal bundle." },
-    { key: "witness", icon: "📝", label: "Witness Statement", desc: "Your account in your own voice, written with legal clarity." },
-  ];
-
-  return (
-    <div>
-      <h2 style={{ margin: "0 0 8px", fontSize: 26, color: "#ffffff", fontFamily: "'Poppins', sans-serif", fontWeight: 700 }}>Your Living Documents</h2>
-      <p style={{ color: "#a0b4c8", fontSize: 15, marginBottom: 24, lineHeight: 1.7 }}>Three core documents that grow with every piece of evidence you add. Download now, then re-download updated versions after each upload.</p>
-
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 16, marginBottom: 24 }}>
-        {docDefs.map(d => (
-          <Card key={d.key} style={{ textAlign: "center", borderColor: generated ? GOLD+"30" : BORDER }}>
-            <div style={{ fontSize: 32, marginBottom: 10 }}>{d.icon}</div>
-            <div style={{ fontSize: 13, fontWeight: 700, color: "#ffffff", marginBottom: 8 }}>{d.label}</div>
-            <div style={{ fontSize: 12, color: "#7a96b0", lineHeight: 1.6, marginBottom: 16 }}>{d.desc}</div>
-            {generated && docs[d.key] && (
-              <Btn small variant="ghost" onClick={() => downloadMd(`${slug}_${d.label.replace(/ /g,"_")}.md`, docs[d.key])}>↓ Download</Btn>
-            )}
-          </Card>
-        ))}
-      </div>
-
-      {!generated ? (
-        <div style={{ display: "flex", gap: 16, alignItems: "center", flexWrap: "wrap" }}>
-          <Btn onClick={generate} disabled={loading}>{loading ? "Generating…" : "Generate All Three Documents →"}</Btn>
-          {loading && <Spinner />}
-        </div>
-      ) : (
-        <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
-          <Btn onClick={() => onComplete({ docs })}>Continue: Add Evidence →</Btn>
-          <Btn variant="subtle" onClick={generate}>↺ Regenerate</Btn>
-        </div>
-      )}
-    </div>
-  );
-}
-
-// ── STEP 4: EVIDENCE ─────────────────────────────────────────────────────────
-
-function AnalysisTabs({ entry, slug }) {
-  const [tab, setTab] = useState("analysis");
-  const tabs = [
-    { id: "analysis", label: "Evidence Analysis" },
-    { id: "coverNote", label: "Notion Cover Note" },
-    { id: "nextSteps", label: "Next Steps" },
-  ];
-  const content = { analysis: entry.analysis, coverNote: entry.coverNote, nextSteps: entry.nextSteps };
-  const filenames = {
-    analysis: `${slug}_Analysis_${entry.filename.replace(".txt","")}.md`,
-    coverNote: `${slug}_CoverNote_${entry.filename.replace(".txt","")}.md`,
-    nextSteps: `${slug}_NextSteps_${entry.filename.replace(".txt","")}.md`,
-  };
-  return (
-    <div>
-      <div style={{ fontSize: 13, color: GOLD, marginBottom: 12, fontWeight: 700 }}>{entry.filename}</div>
-      <div style={{ display: "flex", gap: 0, borderBottom: `1px solid ${BORDER}`, marginBottom: 16 }}>
-        {tabs.map(t => (
-          <button key={t.id} onClick={() => setTab(t.id)} style={{
-            background: "none", border: "none", padding: "9px 16px",
-            fontSize: 11, letterSpacing: 1, textTransform: "uppercase",
-            cursor: "pointer", fontFamily: "Poppins, sans-serif",
-            color: tab === t.id ? GOLD : "#7a96b0",
-            borderBottom: tab === t.id ? `2px solid ${GOLD}` : "2px solid transparent",
-            marginBottom: -1,
-          }}>{t.label}</button>
-        ))}
-      </div>
-      <Card style={{ background: "#001e3d", minHeight: 260, maxHeight: 420, overflowY: "auto", marginBottom: 14 }}>
-        <pre style={{ margin: 0, fontSize: 13, color: "#e8eef4", lineHeight: 1.8, whiteSpace: "pre-wrap", fontFamily: "Poppins, sans-serif" }}>{content[tab]}</pre>
-      </Card>
-      <Btn small variant="ghost" onClick={() => downloadMd(filenames[tab], content[tab])}>↓ Download {tabs.find(t=>t.id===tab)?.label}</Btn>
-    </div>
-  );
-}
-
-function Step4({ caseData, story, docs: initialDocs, savedEvidenceLog, onEvidenceUpdate }) {
-  const [docs, setDocs] = useState(initialDocs);
-  const [evidenceLog, setEvidenceLog] = useState(savedEvidenceLog || []);
-  const [loading, setLoading] = useState(false);
-  const [currentAnalysis, setCurrentAnalysis] = useState(savedEvidenceLog?.[savedEvidenceLog.length - 1] || null);
-  const [dragOver, setDragOver] = useState(false);
-  const fileRef = useRef(null);
-  const slug = caseData.caseTitle.replace(/[^a-z0-9]/gi, "_");
-
-  const processFile = async (file) => {
-    if (!file?.name.endsWith(".txt")) { alert("Please upload a .txt file."); return; }
-    setLoading(true); setCurrentAnalysis(null);
-    const content = await file.text();
-    const prevEvidence = evidenceLog.map(e => `- ${e.filename}: ${e.summary}`).join("\n");
-
-    try {
-      const raw = await callClaude([{ role: "user", content: `Analyse this evidence file and produce four outputs separated ONLY by "---SPLIT---".
-
-Case: ${JSON.stringify(caseData)}
-Original story: ${story.substring(0,300)}
-Previously uploaded evidence:\n${prevEvidence||"None — this is the first document."}
-
-File: "${file.name}"
-Content:\n${content.substring(0,3000)}${content.length>3000?"\n[...truncated]":""}
-
-Output 1 — EVIDENCE ANALYSIS (markdown):
-# Evidence Analysis: ${file.name}
-Cover: document type, date, author/sender, key facts, what it proves or fails to prove, red flags (deflection, contradictions, omissions), regulatory implications, evidence strength (Strong/Moderate/Weak), time-bar concerns.
-
----SPLIT---
-
-Output 2 — NOTION COVER NOTE (markdown):
-# Notion Cover Note — ${file.name}
-Table: Filed Date | Document Ref | Type | Doc Date | Key Facts | Tags | Linked Issues | Next Action
-Then one paragraph: significance to the case and recommended filing location in Notion.
-
----SPLIT---
-
-Output 3 — NEXT STEPS (markdown):
-# Recommended Next Steps
-Numbered priority action list based on what this evidence reveals. Include: letters to send, bodies to contact, further evidence to seek, Goliathon session tools to deploy.
-
----SPLIT---
-
-Output 4 — UPDATED LIVING DOCUMENTS:
-Three updated documents separated ONLY by "===DOC===":
-[Updated Case File Summary incorporating this evidence]===DOC===[Updated Timeline with new rows added]===DOC===[Updated Witness Statement with new paragraph added]` }]);
-
-      const parts = raw.split("---SPLIT---");
-      const analysis = parts[0]?.trim()||"";
-      const coverNote = parts[1]?.trim()||"";
-      const nextSteps = parts[2]?.trim()||"";
-      const updatedRaw = parts[3]?.trim()||"";
-      const updatedParts = updatedRaw.split("===DOC===");
-
-      const newDocs = {
-        summary: updatedParts[0]?.trim()||docs.summary,
-        timeline: updatedParts[1]?.trim()||docs.timeline,
-        witness: updatedParts[2]?.trim()||docs.witness,
-      };
-
-      const summaryLine = analysis.split("\n").find(l=>l.length>30&&!l.startsWith("#"))||"Evidence processed.";
-      const entry = { filename: file.name, analysis, coverNote, nextSteps, summary: summaryLine.substring(0,100) };
-      const newLog = [...evidenceLog, entry];
-      setEvidenceLog(newLog);
-      setDocs(newDocs);
-      setCurrentAnalysis(entry);
-      if (onEvidenceUpdate) onEvidenceUpdate(newLog);
-    } catch { alert("Error processing file. Please try again."); }
-    setLoading(false);
-  };
-
-  return (
-    <div>
-      <h2 style={{ margin: "0 0 8px", fontSize: 26, color: "#ffffff", fontFamily: "'Poppins', sans-serif", fontWeight: 700 }}>Add Evidence</h2>
-      <p style={{ color: "#a0b4c8", fontSize: 15, marginBottom: 24, lineHeight: 1.7 }}>Upload any piece of evidence as a .TXT file — a letter, email, FOI response, complaint reply. Goliathon will analyse it and update all your living documents.</p>
-
-      <div style={{ display: "grid", gridTemplateColumns: "300px 1fr", gap: 24 }}>
-        {/* Left */}
-        <div>
-          <Card style={{ marginBottom: 16 }}>
-            <div
-              onDragOver={e=>{e.preventDefault();setDragOver(true);}}
-              onDragLeave={()=>setDragOver(false)}
-              onDrop={e=>{e.preventDefault();setDragOver(false);processFile(e.dataTransfer.files[0]);}}
-              onClick={()=>!loading&&fileRef.current?.click()}
-              style={{ border: `2px dashed ${dragOver?GOLD:BORDER}`, borderRadius: 10, padding: "28px 16px", textAlign: "center", cursor: loading?"not-allowed":"pointer", background: dragOver?"#001e3d":"transparent", transition: "all 0.2s" }}
-            >
-              <div style={{ fontSize: 34, marginBottom: 10 }}>📄</div>
-              <p style={{ margin: "0 0 4px", fontSize: 14, color: "#e8eef4" }}>{loading?"Processing…":"Drop .TXT file here"}</p>
-              <p style={{ margin: 0, fontSize: 11, color: "#7a96b0" }}>or click to browse</p>
-            </div>
-            <input ref={fileRef} type="file" accept=".txt" style={{ display: "none" }} onChange={e=>processFile(e.target.files[0])} />
-            {loading && <Spinner />}
-          </Card>
-
-          {evidenceLog.length > 0 && (
-            <Card style={{ marginBottom: 16 }}>
-              <Label>Evidence Uploaded ({evidenceLog.length})</Label>
-              {evidenceLog.map((e,i) => (
-                <div key={i} onClick={()=>setCurrentAnalysis(e)} style={{ padding: "10px 0", borderBottom: `1px solid ${BORDER}`, cursor: "pointer" }}>
-                  <div style={{ fontSize: 13, color: currentAnalysis?.filename===e.filename?GOLD:"#e8eef4", fontWeight: 700, marginBottom: 3 }}>{e.filename}</div>
-                  <div style={{ fontSize: 11, color: "#7a96b0", lineHeight: 1.5 }}>{e.summary.substring(0,80)}…</div>
+        <Panel title={`Evidence Library — ${(dossier.evidence || []).length} items`} icon="🗂️">
+          {(dossier.evidence || []).length === 0 ? <EmptyState text="No evidence uploaded yet." /> :
+            (dossier.evidence || []).map((e, i) => (
+              <div key={i} style={{ background: "#001e3d", border: `1px solid ${BORDER}`, borderRadius: 10, padding: 16, marginBottom: 12 }}>
+                <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 12, marginBottom: 8 }}>
+                  <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
+                    <span style={{ fontFamily: "'Poppins', sans-serif", fontWeight: 700, fontSize: 11, color: YELLOW }}>#{String(i + 1).padStart(3, "0")}</span>
+                    <span style={{ fontFamily: "'Poppins', sans-serif", fontWeight: 700, fontSize: 14, color: WHITE }}>{e.title}</span>
+                  </div>
+                  <div style={{ display: "flex", gap: 6, flexShrink: 0 }}>
+                    {e.date && <Tag>{e.date}</Tag>}
+                    {e.type && <Tag color="#7a96b0">{e.type}</Tag>}
+                  </div>
                 </div>
-              ))}
-            </Card>
-          )}
-
-          <Card>
-            <Label>Living Documents</Label>
-            <DownloadRow label="Case File Summary" filename={`${slug}_Case_Summary.md`} content={docs.summary} />
-            <DownloadRow label="Timeline" filename={`${slug}_Timeline.md`} content={docs.timeline} />
-            <DownloadRow label="Witness Statement" filename={`${slug}_Witness_Statement.md`} content={docs.witness} />
-          </Card>
-        </div>
-
-        {/* Right */}
-        <div>
-          {!currentAnalysis && !loading ? (
-            <Card style={{ height: "100%", minHeight: 400, display: "flex", alignItems: "center", justifyContent: "center", textAlign: "center" }}>
-              <div>
-                <div style={{ fontSize: 48, marginBottom: 16 }}>⚖️</div>
-                <h3 style={{ margin: "0 0 12px", color: GOLD, fontSize: 18 }}>Ready for your first document</h3>
-                <p style={{ color: "#7a96b0", fontSize: 14, lineHeight: 1.7, maxWidth: 300 }}>Upload a letter, email, FOI response, or any correspondence as a .TXT file. Goliathon will analyse it and update your living documents instantly.</p>
+                <p style={{ margin: "0 0 8px", fontSize: 13, color: LIGHT, lineHeight: 1.7 }}>{e.summary}</p>
+                {e.red_flags && <p style={{ margin: 0, fontSize: 12, color: "#e57373", lineHeight: 1.6 }}>⚠ {e.red_flags}</p>}
               </div>
-            </Card>
-          ) : currentAnalysis ? (
-            <AnalysisTabs entry={currentAnalysis} slug={slug} />
-          ) : null}
-        </div>
+            ))}
+        </Panel>
+
+        <Panel title="Next Steps" icon="📌">
+          {dossier.next_steps ? <p style={{ margin: 0, fontSize: 14, lineHeight: 1.8, color: LIGHT, whiteSpace: "pre-wrap" }}>{dossier.next_steps}</p> : <EmptyState text="No next steps yet." />}
+        </Panel>
       </div>
+
+      {showDownload && <DownloadModal dossier={dossier} onClose={() => setShowDownload(false)} />}
+      <style>{`@keyframes pulse{0%,100%{opacity:.3;transform:scale(.8)}50%{opacity:1;transform:scale(1)}}`}</style>
     </div>
   );
 }
 
-// ── SAVE / RESTORE ───────────────────────────────────────────────────────────
-
-function SaveRestore({ step, state, onRestore }) {
-  const restoreRef = useRef(null);
-  const [restoreError, setRestoreError] = useState("");
-  const [saved, setSaved] = useState(false);
-
-  const handleSave = () => {
-    const session = { version: 1, savedAt: new Date().toISOString(), step, state };
-    const blob = new Blob([JSON.stringify(session, null, 2)], { type: "application/json" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    const slug = state.caseData?.caseTitle?.replace(/[^a-z0-9]/gi, "_") || "session";
-    a.href = url;
-    a.download = `Goliathon_${slug}_${new Date().toISOString().slice(0,10)}.json`;
-    a.click();
-    URL.revokeObjectURL(url);
-    setSaved(true);
-    setTimeout(() => setSaved(false), 3000);
-  };
-
-  const handleRestore = (file) => {
-    if (!file) return;
-    const reader = new FileReader();
-    reader.onload = (e) => {
-      try {
-        const session = JSON.parse(e.target.result);
-        if (!session.version || !session.step || !session.state) throw new Error("Invalid file");
-        onRestore(session.step, session.state);
-        setRestoreError("");
-      } catch {
-        setRestoreError("This file doesn't look like a valid Goliathon session. Please try again.");
-      }
-    };
-    reader.readAsText(file);
-  };
-
-  // Only show save if there's something worth saving
-  const canSave = step > 1;
-
-  return (
-    <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
-      {canSave && (
-        <button onClick={handleSave} style={{
-          background: "none", border: `1px solid ${GOLD}40`, borderRadius: 6,
-          padding: "6px 14px", fontSize: 11, letterSpacing: 1, textTransform: "uppercase",
-          color: saved ? "#7e9e82" : GOLD, cursor: "pointer", fontFamily: "Poppins, sans-serif",
-          transition: "all 0.2s",
-        }}>
-          {saved ? "✓ Session Saved" : "↓ Save Session"}
-        </button>
-      )}
-      <button onClick={() => restoreRef.current?.click()} style={{
-        background: "none", border: `1px solid ${BORDER}`, borderRadius: 6,
-        padding: "6px 14px", fontSize: 11, letterSpacing: 1, textTransform: "uppercase",
-        color: "#7a96b0", cursor: "pointer", fontFamily: "Poppins, sans-serif",
-      }}>
-        ↑ Restore Session
-      </button>
-      <input ref={restoreRef} type="file" accept=".json" style={{ display: "none" }} onChange={e => handleRestore(e.target.files[0])} />
-      {restoreError && <span style={{ fontSize: 11, color: "#b07a7a" }}>{restoreError}</span>}
-    </div>
-  );
-}
-
-// ── MAIN ─────────────────────────────────────────────────────────────────────
+// ── MAIN APP ──────────────────────────────────────────────────────────────────
 
 export default function GoliathonApp() {
-  const [step, setStep] = useState(1);
-  const [state, setState] = useState({});
-  const merge = updates => setState(prev => ({ ...prev, ...updates }));
+  const [dossier, setDossier] = useState(null);
+  const [processing, setProcessing] = useState(false);
+  const [processingMsg, setProcessingMsg] = useState("");
+  const [dragOver, setDragOver] = useState(false);
+  const [urlInput, setUrlInput] = useState("");
+  const [showUrl, setShowUrl] = useState(false);
+  const [showShare, setShowShare] = useState(false);
+  const [showDownload, setShowDownload] = useState(false);
+  const [shareId] = useState(() => generateShareId());
+  const [saved, setSaved] = useState(false);
+  const [readOnly, setReadOnly] = useState(false);
+  const [readOnlyDossier, setReadOnlyDossier] = useState(null);
+  const fileRef = useRef(null);
 
-  const handleRestore = (restoredStep, restoredState) => {
-    setState(restoredState);
-    setStep(restoredStep);
-  };
+  // Check if this is a shared dossier link
+  useEffect(() => {
+    const path = window.location.pathname;
+    const match = path.match(/\/dossier\/([a-z0-9]+)/i);
+    if (match) {
+      setReadOnly(true);
+      loadDossier(match[1]).then(data => {
+        if (data) setReadOnlyDossier(data);
+      });
+    }
+  }, []);
+
+  const updateDossier = useCallback(async (newDossier) => {
+    setDossier(newDossier);
+    setSaved(false);
+    try {
+      await saveDossier({ ...newDossier, share_id: shareId, _saved: !!newDossier._saved });
+      setSaved(true);
+      setDossier(prev => ({ ...prev, _saved: true }));
+    } catch (e) {
+      console.error("Save error:", e);
+    }
+  }, [shareId]);
+
+  const processEvidence = useCallback(async (content, filename, mediaType, isUrl = false) => {
+    setProcessing(true);
+    setProcessingMsg(`Reading ${filename}…`);
+
+    try {
+      const isImage = mediaType && mediaType.startsWith("image/");
+      const isPdf = mediaType === "application/pdf";
+
+      // Build message for Claude
+      let userMessage;
+      if (isImage) {
+        userMessage = {
+          role: "user",
+          content: [
+            { type: "image", source: { type: "base64", media_type: mediaType, data: content } },
+            { type: "text", text: `Analyse this uploaded image as evidence. Filename: ${filename}` },
+          ],
+        };
+      } else if (isPdf) {
+        userMessage = {
+          role: "user",
+          content: [
+            { type: "document", source: { type: "base64", media_type: "application/pdf", data: content } },
+            { type: "text", text: `Analyse this uploaded document as evidence. Filename: ${filename}` },
+          ],
+        };
+      } else {
+        userMessage = {
+          role: "user",
+          content: `Analyse this evidence. ${isUrl ? "Source URL: " + filename : "Filename: " + filename}\n\nContent:\n${content}`,
+        };
+      }
+
+      const existing = dossier ? `\n\nExisting case context:\nTitle: ${dossier.case_title || "Unknown"}\nOverview: ${(dossier.overview || "").substring(0, 400)}\nEvidence count: ${(dossier.evidence || []).length}` : "\n\nThis is the FIRST piece of evidence — use it to establish the case title, parties, and initial overview.";
+
+      setProcessingMsg("Analysing evidence…");
+
+      const prompt = `${existing}
+
+Analyse this evidence and return ONLY valid JSON with no preamble or markdown:
+{
+  "case_title": "short case title e.g. 'Smith v Lloyds Bank — Pension Mis-selling' (derive from evidence if first upload, or keep existing)",
+  "evidence_item": {
+    "title": "descriptive title for this document",
+    "date": "date of document in DD Mon YYYY format or null",
+    "type": "Letter / Email / Statement / Report / Photo / Web Page / Other",
+    "summary": "2-3 sentence summary of what this document contains and its significance",
+    "red_flags": "any concerning phrases, omissions, or evasions — or null if none"
+  },
+  "timeline_entry": {
+    "date": "date this event occurred in DD Mon YYYY format or null",
+    "event": "one sentence describing what happened",
+    "evidence": "reference to this document"
+  },
+  "overview_update": "updated 3-4 sentence case overview incorporating this new evidence (rewrite the whole overview)",
+  "witness_update": "add one or two sentences to the witness statement in first person reflecting this evidence (write only the new sentences to add, not the full statement)",
+  "next_steps_update": "updated numbered list of 3-5 priority next steps given all evidence so far"
+}`;
+
+      const response = await callClaude([{ ...userMessage, content: typeof userMessage.content === "string" ? userMessage.content + prompt : [...(Array.isArray(userMessage.content) ? userMessage.content : [userMessage.content]), { type: "text", text: prompt }] }]);
+
+      let parsed;
+      try {
+        const clean = response.replace(/```json|```/g, "").trim();
+        parsed = JSON.parse(clean);
+      } catch {
+        throw new Error("Could not parse AI response");
+      }
+
+      setProcessingMsg("Updating dossier…");
+
+      const current = dossier || { evidence: [], timeline: [], witness_statement: "", overview: "", next_steps: "" };
+      const newEvidence = [...(current.evidence || []), parsed.evidence_item];
+      const newTimeline = [...(current.timeline || [])];
+
+      if (parsed.timeline_entry && parsed.timeline_entry.event) {
+        newTimeline.push(parsed.timeline_entry);
+        // Sort by date
+        newTimeline.sort((a, b) => {
+          if (!a.date) return 1;
+          if (!b.date) return -1;
+          return new Date(a.date) - new Date(b.date);
+        });
+      }
+
+      const newWitness = current.witness_statement
+        ? current.witness_statement + "\n\n" + (parsed.witness_update || "")
+        : parsed.witness_update || "";
+
+      const newDossier = {
+        ...current,
+        case_title: parsed.case_title || current.case_title,
+        overview: parsed.overview_update || current.overview,
+        timeline: newTimeline,
+        witness_statement: newWitness,
+        next_steps: parsed.next_steps_update || current.next_steps,
+        evidence: newEvidence,
+        _saved: !!current._saved,
+      };
+
+      await updateDossier(newDossier);
+
+    } catch (e) {
+      alert("Something went wrong processing this file. Please try again.\n\n" + e.message);
+    }
+
+    setProcessing(false);
+    setProcessingMsg("");
+  }, [dossier, updateDossier]);
+
+  const handleFile = useCallback(async (file) => {
+    if (!file) return;
+    const allowed = ["image/jpeg", "image/png", "image/gif", "image/webp", "application/pdf", "text/plain"];
+    if (!allowed.includes(file.type)) {
+      alert("Please upload an image (JPG/PNG), PDF, or TXT file.");
+      return;
+    }
+    const base64 = await fileToBase64(file);
+    await processEvidence(base64, file.name, file.type);
+  }, [processEvidence]);
+
+  const handleUrl = useCallback(async () => {
+    if (!urlInput.trim()) return;
+    setShowUrl(false);
+    setProcessing(true);
+    setProcessingMsg("Fetching URL…");
+    try {
+      const res = await fetch("/api/fetch-url", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ url: urlInput.trim() }),
+      });
+      const data = await res.json();
+      if (data.error) throw new Error(data.error);
+      await processEvidence(data.text, urlInput.trim(), "text/plain", true);
+    } catch (e) {
+      alert("Could not fetch URL: " + e.message);
+      setProcessing(false);
+      setProcessingMsg("");
+    }
+    setUrlInput("");
+  }, [urlInput, processEvidence]);
+
+  // Read-only view
+  if (readOnly) {
+    if (!readOnlyDossier) return (
+      <div style={{ fontFamily: "'Open Sans', sans-serif", background: NAVY, minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center", color: LIGHT }}>
+        <div style={{ textAlign: "center" }}><Spinner /><p style={{ marginTop: 16, color: "#7a96b0" }}>Loading dossier…</p></div>
+      </div>
+    );
+    return <ReadOnlyDossier dossier={readOnlyDossier} />;
+  }
+
+  const evidenceCount = dossier?.evidence?.length || 0;
 
   return (
-    <div style={{ fontFamily: "'Open Sans', sans-serif", background: "#00274d", minHeight: "100vh", width: "100%", color: "#e8eef4" }}>
+    <div style={{ fontFamily: "'Open Sans', sans-serif", background: NAVY, minHeight: "100vh", width: "100%", color: LIGHT }}>
+
       {/* Header */}
-      <div style={{ background: "#00274d", borderBottom: "3px solid #ffc72c", padding: "20px 40px 0" }}>
-        <div style={{ maxWidth: 1000, margin: "0 auto" }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 20, marginBottom: 20 }}>
-            <img src="/getsafe-logo.png" alt="Get SAFE Logo" style={{ width: 64, height: 64, objectFit: "contain", flexShrink: 0 }} />
+      <div style={{ background: NAVY, borderBottom: `3px solid ${YELLOW}`, padding: "16px 32px 0" }}>
+        <div style={{ maxWidth: 1100, margin: "0 auto" }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 16, marginBottom: 16 }}>
+            <img src="/getsafe-logo.png" alt="Get SAFE" style={{ width: 56, height: 56, objectFit: "contain", flexShrink: 0 }} />
             <div>
-              <div style={{ fontSize: 10, letterSpacing: 4, color: "#ffc72c", textTransform: "uppercase", marginBottom: 2, fontFamily: "'Poppins', sans-serif" }}>Get SAFE · Academy of Life Planning</div>
-              <h1 style={{ margin: 0, fontSize: 30, fontWeight: 800, color: "#ffffff", letterSpacing: "-0.5px", fontFamily: "'Poppins', sans-serif" }}>GOLIATHON</h1>
+              <div style={{ fontSize: 10, letterSpacing: 4, color: YELLOW, textTransform: "uppercase", fontFamily: "'Poppins', sans-serif", marginBottom: 2 }}>Get SAFE · Academy of Life Planning</div>
+              <h1 style={{ margin: 0, fontFamily: "'Poppins', sans-serif", fontSize: 28, fontWeight: 800, color: WHITE, letterSpacing: "-0.5px" }}>GOLIATHON</h1>
             </div>
-            <div style={{ marginLeft: "auto", textAlign: "right" }}>
-              <p style={{ margin: 0, fontSize: 12, color: "#a0b4c8", fontStyle: "italic", fontFamily: "'Open Sans', sans-serif" }}>Turning survivors into strategists.</p>
-              <p style={{ margin: 0, fontSize: 12, color: "#7a96b0", fontStyle: "italic", fontFamily: "'Open Sans', sans-serif" }}>Evidence into action.</p>
-              <div style={{ marginTop: 8 }}>
-                <SaveRestore step={step} state={state} onRestore={handleRestore} />
+            {dossier && (
+              <div style={{ marginLeft: "auto", display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap", justifyContent: "flex-end" }}>
+                {saved && <Tag color="#7e9e82">✓ Saved</Tag>}
+                <Btn small variant="ghost" onClick={() => setShowShare(true)}>🔗 Share Dossier</Btn>
+                <Btn small onClick={() => setShowDownload(true)}>↓ Download</Btn>
               </div>
-            </div>
+            )}
           </div>
-          <StepIndicator current={step} />
         </div>
       </div>
 
-      {/* Content */}
-      <div style={{ maxWidth: 1000, margin: "0 auto", padding: "48px 40px", background: "#00274d" }}>
-        {step === 1 && <Step1 onComplete={data => { merge(data); setStep(2); }} />}
-        {step === 2 && <Step2 caseData={state.caseData} story={state.story} onComplete={data => { merge(data); setStep(3); }} />}
-        {step === 3 && <Step3 caseData={state.caseData} story={state.story} onComplete={data => { merge(data); setStep(4); }} />}
-        {step === 4 && <Step4 caseData={state.caseData} story={state.story} docs={state.docs} savedEvidenceLog={state.evidenceLog} onEvidenceUpdate={log => merge({ evidenceLog: log })} />}
+      {/* Main */}
+      <div style={{ maxWidth: 1100, margin: "0 auto", padding: "32px" }}>
+
+        {/* Upload Zone */}
+        <div
+          onDragOver={e => { e.preventDefault(); setDragOver(true); }}
+          onDragLeave={() => setDragOver(false)}
+          onDrop={e => { e.preventDefault(); setDragOver(false); handleFile(e.dataTransfer.files[0]); }}
+          onClick={() => !processing && fileRef.current?.click()}
+          style={{
+            border: `2px dashed ${dragOver ? YELLOW : processing ? YELLOW + "60" : BORDER}`,
+            borderRadius: 16,
+            padding: "40px 32px",
+            textAlign: "center",
+            cursor: processing ? "not-allowed" : "pointer",
+            background: dragOver ? "#001e3d" : processing ? "#001830" : "transparent",
+            transition: "all 0.2s",
+            marginBottom: 24,
+            position: "relative",
+          }}
+        >
+          {processing ? (
+            <div>
+              <div style={{ marginBottom: 16 }}><Spinner /></div>
+              <p style={{ margin: 0, fontFamily: "'Poppins', sans-serif", fontWeight: 700, fontSize: 16, color: YELLOW }}>{processingMsg}</p>
+              <p style={{ margin: "8px 0 0", fontSize: 13, color: "#7a96b0" }}>Goliathon is building your dossier…</p>
+            </div>
+          ) : (
+            <div>
+              <div style={{ fontSize: 48, marginBottom: 12 }}>
+                {evidenceCount === 0 ? "⚖️" : "➕"}
+              </div>
+              <p style={{ margin: "0 0 6px", fontFamily: "'Poppins', sans-serif", fontWeight: 700, fontSize: 18, color: WHITE }}>
+                {evidenceCount === 0 ? "Upload your first piece of evidence to begin" : "Upload your next piece of evidence"}
+              </p>
+              <p style={{ margin: "0 0 20px", fontSize: 14, color: "#7a96b0" }}>
+                {evidenceCount === 0
+                  ? "Drop a photo, PDF, or document here — Goliathon will build your case automatically"
+                  : `${evidenceCount} item${evidenceCount !== 1 ? "s" : ""} in your dossier — keep adding to build your case`}
+              </p>
+              <div style={{ display: "flex", gap: 10, justifyContent: "center", flexWrap: "wrap" }}>
+                <Btn small>📎 Upload File</Btn>
+                <Btn small variant="subtle" onClick={e => { e.stopPropagation(); setShowUrl(true); }}>🔗 Add URL</Btn>
+              </div>
+              <p style={{ margin: "16px 0 0", fontSize: 12, color: "#5a7a96" }}>Accepts photos (JPG/PNG), PDFs, and text files</p>
+            </div>
+          )}
+        </div>
+        <input ref={fileRef} type="file" accept="image/*,.pdf,.txt" style={{ display: "none" }} onChange={e => handleFile(e.target.files[0])} />
+
+        {/* URL Input */}
+        {showUrl && (
+          <div style={{ background: PANEL, border: `1px solid ${BORDER}`, borderRadius: 12, padding: 20, marginBottom: 24 }}>
+            <p style={{ margin: "0 0 12px", fontFamily: "'Poppins', sans-serif", fontWeight: 700, fontSize: 14, color: WHITE }}>Add a URL as evidence</p>
+            <div style={{ display: "flex", gap: 10 }}>
+              <input value={urlInput} onChange={e => setUrlInput(e.target.value)} onKeyDown={e => e.key === "Enter" && handleUrl()} placeholder="https://www.example.com/relevant-page" style={{ flex: 1, background: "#001e3d", border: `1px solid ${BORDER}`, borderRadius: 8, padding: "10px 16px", color: WHITE, fontSize: 14, outline: "none", fontFamily: "'Open Sans', sans-serif" }} />
+              <Btn onClick={handleUrl} disabled={!urlInput.trim()}>Add</Btn>
+              <Btn variant="subtle" onClick={() => setShowUrl(false)}>Cancel</Btn>
+            </div>
+          </div>
+        )}
+
+        {/* Dossier */}
+        {!dossier && !processing && (
+          <div style={{ textAlign: "center", padding: "60px 32px" }}>
+            <p style={{ color: "#5a7a96", fontSize: 15, fontStyle: "italic", maxWidth: 500, margin: "0 auto", lineHeight: 1.8 }}>
+              Your evidence dossier will appear here as you upload. Each document is automatically read, analysed, and filed. Your case builds itself.
+            </p>
+          </div>
+        )}
+
+        {dossier && (
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
+            {/* Left column */}
+            <div>
+              {dossier.case_title && (
+                <div style={{ background: `linear-gradient(135deg, ${YELLOW}20, transparent)`, border: `1px solid ${YELLOW}40`, borderRadius: 12, padding: "16px 20px", marginBottom: 16 }}>
+                  <div style={{ fontSize: 10, letterSpacing: 3, color: YELLOW, textTransform: "uppercase", fontFamily: "'Poppins', sans-serif", marginBottom: 4 }}>Case</div>
+                  <h2 style={{ margin: 0, fontFamily: "'Poppins', sans-serif", fontSize: 18, fontWeight: 800, color: WHITE }}>{dossier.case_title}</h2>
+                  <div style={{ marginTop: 8 }}><Tag>{evidenceCount} item{evidenceCount !== 1 ? "s" : ""} filed</Tag></div>
+                </div>
+              )}
+
+              <Panel title="Case Overview" icon="📋" action={<Btn small variant="ghost" onClick={() => downloadText("overview.txt", dossier.overview || "")}>↓</Btn>}>
+                {dossier.overview ? <p style={{ margin: 0, fontSize: 13, lineHeight: 1.8, color: LIGHT }}>{dossier.overview}</p> : <EmptyState text="Building overview…" />}
+              </Panel>
+
+              <Panel title="Witness Statement" icon="📝" action={<Btn small variant="ghost" onClick={() => downloadText("witness_statement.txt", dossier.witness_statement || "")}>↓</Btn>}>
+                {dossier.witness_statement ? <p style={{ margin: 0, fontSize: 13, lineHeight: 1.9, color: LIGHT, whiteSpace: "pre-wrap" }}>{dossier.witness_statement}</p> : <EmptyState text="Building statement…" />}
+              </Panel>
+
+              <Panel title="Next Steps" icon="📌" action={<Btn small variant="ghost" onClick={() => downloadText("next_steps.txt", dossier.next_steps || "")}>↓</Btn>}>
+                {dossier.next_steps ? <p style={{ margin: 0, fontSize: 13, lineHeight: 1.8, color: LIGHT, whiteSpace: "pre-wrap" }}>{dossier.next_steps}</p> : <EmptyState text="Next steps will appear here…" />}
+              </Panel>
+            </div>
+
+            {/* Right column */}
+            <div>
+              <Panel title="Timeline" icon="📅" action={<Btn small variant="ghost" onClick={() => downloadText("timeline.txt", (dossier.timeline || []).map((t, i) => `${i + 1}. [${t.date || "Unknown"}] ${t.event}`).join("\n"))}>↓</Btn>}>
+                {(dossier.timeline || []).length === 0 ? <EmptyState text="Timeline building…" /> :
+                  (dossier.timeline || []).map((t, i) => (
+                    <div key={i} style={{ display: "flex", gap: 12, marginBottom: 14, paddingBottom: 14, borderBottom: i < dossier.timeline.length - 1 ? `1px solid ${BORDER}` : "none" }}>
+                      <div style={{ width: 28, height: 28, background: YELLOW, borderRadius: "50%", display: "flex", alignItems: "center", justifyContent: "center", fontFamily: "'Poppins', sans-serif", fontWeight: 700, fontSize: 11, color: NAVY, flexShrink: 0 }}>{i + 1}</div>
+                      <div>
+                        <div style={{ fontSize: 11, color: YELLOW, fontWeight: 600, marginBottom: 2 }}>{t.date || "Date unknown"}</div>
+                        <div style={{ fontSize: 13, color: LIGHT, lineHeight: 1.6 }}>{t.event}</div>
+                        {t.evidence && <div style={{ fontSize: 11, color: "#5a7a96", marginTop: 3 }}>{t.evidence}</div>}
+                      </div>
+                    </div>
+                  ))}
+              </Panel>
+
+              <Panel title={`Evidence Library — ${evidenceCount} item${evidenceCount !== 1 ? "s" : ""}`} icon="🗂️" action={<Btn small variant="ghost" onClick={() => downloadText("evidence_library.txt", (dossier.evidence || []).map((e, i) => `[${String(i + 1).padStart(3, "0")}] ${e.title}\n${e.summary}`).join("\n\n"))}>↓</Btn>}>
+                {(dossier.evidence || []).length === 0 ? <EmptyState text="No evidence uploaded yet." /> :
+                  [...(dossier.evidence || [])].reverse().map((e, i) => {
+                    const realIndex = (dossier.evidence || []).length - i;
+                    return (
+                      <div key={i} style={{ background: "#001e3d", border: `1px solid ${BORDER}`, borderRadius: 10, padding: "12px 14px", marginBottom: 10 }}>
+                        <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6, flexWrap: "wrap" }}>
+                          <span style={{ fontFamily: "'Poppins', sans-serif", fontWeight: 700, fontSize: 11, color: YELLOW }}>#{String(realIndex).padStart(3, "0")}</span>
+                          <span style={{ fontFamily: "'Poppins', sans-serif", fontWeight: 700, fontSize: 13, color: WHITE, flex: 1 }}>{e.title}</span>
+                          {e.date && <Tag>{e.date}</Tag>}
+                          {e.type && <Tag color="#7a96b0">{e.type}</Tag>}
+                        </div>
+                        <p style={{ margin: "0 0 6px", fontSize: 12, color: LIGHT, lineHeight: 1.6 }}>{e.summary}</p>
+                        {e.red_flags && <p style={{ margin: 0, fontSize: 11, color: "#e57373", lineHeight: 1.5 }}>⚠ {e.red_flags}</p>}
+                      </div>
+                    );
+                  })}
+              </Panel>
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Footer */}
-      <div style={{ borderTop: "1px solid #003a6e", background: "#001e3d", padding: "20px 40px", textAlign: "center" }}>
-        <p style={{ margin: 0, fontSize: 11, color: "#7a96b0" }}>
-          Goliathon · Get SAFE (Support After Financial Exploitation) · Founded by Steve Conley · Academy of Life Planning · <a href="https://www.get-safe.org.uk/
-" style={{ color: "#a0b4c8" }}>get-safe.org.uk</a> · Educational use only. Not legal, financial, or mental-health advice.
+      <div style={{ borderTop: `1px solid ${BORDER}`, padding: "20px 32px", textAlign: "center", marginTop: 32 }}>
+        <p style={{ margin: 0, fontSize: 11, color: "#5a7a96" }}>
+          Goliathon · Get SAFE (Support After Financial Exploitation) · Founded by Steve Conley · Academy of Life Planning · <a href="https://www.get-safe.org.uk/" style={{ color: "#7a96b0" }}>www.get-safe.org.uk</a> · Educational use only. Not legal, financial, or mental-health advice.
         </p>
       </div>
 
+      {/* Modals */}
+      {showShare && <ShareModal shareId={shareId} onClose={() => setShowShare(false)} />}
+      {showDownload && dossier && <DownloadModal dossier={dossier} onClose={() => setShowDownload(false)} />}
+
       <style>{`
-        @keyframes pulse { 0%,100%{opacity:0.3;transform:scale(0.8)} 50%{opacity:1;transform:scale(1)} }
+        @keyframes pulse{0%,100%{opacity:.3;transform:scale(.8)}50%{opacity:1;transform:scale(1)}}
         *{box-sizing:border-box}
         ::-webkit-scrollbar{width:6px}
         ::-webkit-scrollbar-track{background:#001e3d}
-        ::-webkit-scrollbar-thumb{background:#ffc72c40;border-radius:3px}
-        textarea::placeholder{color:#7a96b0}
+        ::-webkit-scrollbar-thumb{background:${YELLOW}40;border-radius:3px}
+        input::placeholder{color:#5a7a96}
       `}</style>
     </div>
   );

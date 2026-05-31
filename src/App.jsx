@@ -626,9 +626,9 @@ Existing case context:
 Title: ${dossier.case_title || "Unknown"}
 Overview: ${(dossier.overview || "").substring(0, 600)}
 Evidence already filed (${(dossier.evidence || []).length} items): ${(dossier.evidence || []).map(e => e.title).join(", ")}`
-        : "
+        : `
 
-This is the FIRST piece of evidence — use it to establish the case title, parties, and initial overview.";
+This is the FIRST piece of evidence — use it to establish the case title, parties, and initial overview.`;
 
       const prompt = `${existing}
 

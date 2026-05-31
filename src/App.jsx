@@ -92,6 +92,32 @@ function fileToBase64(file) {
   });
 }
 
+// ── IMAGE COMPRESSION ────────────────────────────────────────────────────────
+function compressImage(file) {
+  return new Promise((resolve) => {
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      const img = new Image();
+      img.onload = () => {
+        const canvas = document.createElement("canvas");
+        const maxSize = 1600;
+        let { width, height } = img;
+        if (width > maxSize || height > maxSize) {
+          if (width > height) { height = (height / width) * maxSize; width = maxSize; }
+          else { width = (width / height) * maxSize; height = maxSize; }
+        }
+        canvas.width = width;
+        canvas.height = height;
+        canvas.getContext("2d").drawImage(img, 0, 0, width, height);
+        const compressed = canvas.toDataURL("image/jpeg", 0.75).split(",")[1];
+        resolve(compressed);
+      };
+      img.src = e.target.result;
+    };
+    reader.readAsDataURL(file);
+  });
+}
+
 // ── DOWNLOAD HELPERS ─────────────────────────────────────────────────────────
 function downloadText(filename, content) {
   const blob = new Blob([content], { type: "text/plain" });
@@ -352,6 +378,10 @@ export default function GoliathonApp() {
   const [readOnlyDossier, setReadOnlyDossier] = useState(null);
   const fileRef = useRef(null);
   const restoreRef = useRef(null);
+  const cameraRef = useRef(null);
+  const [showCamera, setShowCamera] = useState(false);
+  const [cameraPages, setCameraPages] = useState([]);
+  const [cameraProcessing, setCameraProcessing] = useState(false);
 
   const handleSaveLocal = useCallback(() => {
     if (!dossier) return;
@@ -562,6 +592,119 @@ Analyse this evidence and return ONLY valid JSON with no preamble or markdown:
     setUrlInput("");
   }, [urlInput, processEvidence]);
 
+  // Camera scan handlers
+  const handleCameraCapture = useCallback(async (e) => {
+    const files = Array.from(e.target.files);
+    if (!files.length) return;
+    const newPages = [];
+    for (const file of files) {
+      const compressed = await compressImage(file);
+      newPages.push({ data: compressed, name: file.name, preview: URL.createObjectURL(file) });
+    }
+    setCameraPages(prev => [...prev, ...newPages]);
+  }, []);
+
+  const handleCameraSubmit = useCallback(async () => {
+    if (!cameraPages.length) return;
+    setCameraProcessing(true);
+    setShowCamera(false);
+    setProcessing(true);
+    setProcessingMsg(`Processing ${cameraPages.length} page${cameraPages.length > 1 ? "s" : ""}…`);
+
+    try {
+      // Build multi-image message for Claude
+      const imageContent = cameraPages.map(page => ({
+        type: "image",
+        source: { type: "base64", media_type: "image/jpeg", data: page.data }
+      }));
+      imageContent.push({ type: "text", text: "These are photographed pages of a physical document being added as evidence. Please analyse all pages together as a single document." });
+
+      const existing = dossier 
+        ? `
+
+Existing case context:
+Title: ${dossier.case_title || "Unknown"}
+Overview: ${(dossier.overview || "").substring(0, 600)}
+Evidence already filed (${(dossier.evidence || []).length} items): ${(dossier.evidence || []).map(e => e.title).join(", ")}`
+        : "
+
+This is the FIRST piece of evidence — use it to establish the case title, parties, and initial overview.";
+
+      const prompt = `${existing}
+
+Analyse this photographed document (${cameraPages.length} page${cameraPages.length > 1 ? "s" : ""}) and return ONLY valid JSON with no preamble or markdown:
+{
+  "case_title": "short case title",
+  "evidence_item": {
+    "title": "descriptive title for this document",
+    "date": "date of document in DD Mon YYYY format or null",
+    "type": "Letter / Court Document / Medical / Financial / Other",
+    "summary": "2-3 sentence summary of what this document contains and its significance",
+    "red_flags": "any concerning phrases, omissions, or evasions — or null if none"
+  },
+  "timeline_entry": {
+    "date": "date this event occurred in DD Mon YYYY format or null",
+    "event": "one sentence describing what happened",
+    "evidence": "reference to this document"
+  },
+  "overview_update": "updated 3-4 sentence case overview incorporating this new evidence",
+  "witness_update": "add one or two sentences to the witness statement in first person reflecting this evidence",
+  "next_steps_update": "updated numbered list of 3-5 priority next steps given all evidence so far"
+}`;
+
+      const res = await fetch("/api/claude", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          model: "claude-sonnet-4-20250514",
+          max_tokens: 4000,
+          system: SYSTEM,
+          messages: [{ role: "user", content: [...imageContent, { type: "text", text: prompt }] }],
+        }),
+      });
+      const data = await res.json();
+      const response = data.content?.[0]?.text || "";
+
+      let parsed;
+      try { parsed = JSON.parse(response.replace(/```json|```/g, "").trim()); }
+      catch { throw new Error("Could not parse AI response"); }
+
+      setProcessingMsg("Updating dossier…");
+      const current = dossier || { evidence: [], timeline: [], witness_statement: "", overview: "", next_steps: "" };
+      const newEvidence = [...(current.evidence || []), parsed.evidence_item];
+      const newTimeline = [...(current.timeline || [])];
+      if (parsed.timeline_entry?.event) {
+        newTimeline.push(parsed.timeline_entry);
+        newTimeline.sort((a, b) => { if (!a.date) return 1; if (!b.date) return -1; return new Date(a.date) - new Date(b.date); });
+      }
+      const newWitness = current.witness_statement ? current.witness_statement + "
+
+" + (parsed.witness_update || "") : parsed.witness_update || "";
+      const newDossier = {
+        ...current,
+        case_title: parsed.case_title || current.case_title,
+        overview: parsed.overview_update || current.overview,
+        timeline: newTimeline,
+        witness_statement: newWitness,
+        next_steps: typeof parsed.next_steps_update === 'string' ? parsed.next_steps_update : Array.isArray(parsed.next_steps_update) ? parsed.next_steps_update.map((s,i) => `${i+1}. ${s}`).join('
+') : current.next_steps,
+        evidence: newEvidence,
+      };
+      await updateDossier(newDossier);
+    } catch (e) {
+      alert("Something went wrong processing the camera scan. Please try again.
+
+" + e.message);
+    }
+
+    // Cleanup
+    cameraPages.forEach(p => URL.revokeObjectURL(p.preview));
+    setCameraPages([]);
+    setCameraProcessing(false);
+    setProcessing(false);
+    setProcessingMsg("");
+  }, [cameraPages, dossier, updateDossier]);
+
   // Read-only view
   if (readOnly) {
     if (!readOnlyDossier) return (
@@ -643,13 +786,15 @@ Analyse this evidence and return ONLY valid JSON with no preamble or markdown:
               </p>
               <div style={{ display: "flex", gap: 10, justifyContent: "center", flexWrap: "wrap" }}>
                 <Btn small>📎 Upload File</Btn>
+                <Btn small variant="subtle" onClick={e => { e.stopPropagation(); setShowCamera(true); setCameraPages([]); }}>📷 Camera Scan</Btn>
                 <Btn small variant="subtle" onClick={e => { e.stopPropagation(); setShowUrl(true); }}>🔗 Add URL</Btn>
               </div>
-              <p style={{ margin: "16px 0 0", fontSize: 12, color: "#5a7a96" }}>Accepts photos (JPG/PNG), PDFs, and text files</p>
+              <p style={{ margin: "16px 0 0", fontSize: 12, color: "#5a7a96" }}>Accepts photos (JPG/PNG), PDFs, text files, or camera scan</p>
             </div>
           )}
         </div>
         <input ref={fileRef} type="file" accept="image/*,.pdf,.txt" style={{ display: "none" }} onChange={e => handleFile(e.target.files[0])} />
+        <input ref={cameraRef} type="file" accept="image/*" capture="environment" multiple style={{ display: "none" }} onChange={handleCameraCapture} />
 
         {/* URL Input */}
         {showUrl && (
@@ -742,6 +887,50 @@ Analyse this evidence and return ONLY valid JSON with no preamble or markdown:
           Goliathon · Get SAFE (Support After Financial Exploitation) · Founded by Steve Conley · Academy of Life Planning · <a href="https://www.get-safe.org.uk/" style={{ color: "#7a96b0" }}>www.get-safe.org.uk</a> · Educational use only. Not legal, financial, or mental-health advice.
         </p>
       </div>
+
+      {/* Camera Scan Modal */}
+      {showCamera && (
+        <div style={{ position: "fixed", inset: 0, background: "#000000dd", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 1000 }}>
+          <div style={{ background: PANEL, border: `1px solid ${BORDER}`, borderRadius: 16, padding: 32, maxWidth: 520, width: "90%", maxHeight: "90vh", overflowY: "auto" }}>
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 20 }}>
+              <h3 style={{ margin: 0, fontFamily: "'Poppins', sans-serif", color: WHITE, fontSize: 18, fontWeight: 700 }}>📷 Camera Scan</h3>
+              <Btn small variant="subtle" onClick={() => { setShowCamera(false); setCameraPages([]); }}>✕</Btn>
+            </div>
+            <p style={{ color: "#7a96b0", fontSize: 13, lineHeight: 1.7, marginBottom: 20 }}>
+              Photograph a physical letter, document, or correspondence. You can capture multiple pages — they will be analysed together as a single evidence item.
+            </p>
+
+            {/* Page thumbnails */}
+            {cameraPages.length > 0 && (
+              <div style={{ marginBottom: 16 }}>
+                <div style={{ fontSize: 12, color: YELLOW, marginBottom: 8, fontFamily: "'Poppins', sans-serif", fontWeight: 600 }}>{cameraPages.length} page{cameraPages.length > 1 ? "s" : ""} captured</div>
+                <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                  {cameraPages.map((p, i) => (
+                    <div key={i} style={{ position: "relative" }}>
+                      <img src={p.preview} alt={`Page ${i+1}`} style={{ width: 80, height: 100, objectFit: "cover", borderRadius: 6, border: `1px solid ${BORDER}` }} />
+                      <div style={{ position: "absolute", top: 2, right: 2, background: NAVY, borderRadius: "50%", width: 18, height: 18, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 10, color: YELLOW, cursor: "pointer", fontWeight: 700 }}
+                        onClick={() => setCameraPages(prev => prev.filter((_, j) => j !== i))}>✕</div>
+                      <div style={{ fontSize: 10, color: "#7a96b0", textAlign: "center", marginTop: 2 }}>Page {i+1}</div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+              <Btn variant="subtle" small onClick={() => cameraRef.current?.click()}>
+                {cameraPages.length === 0 ? "📷 Open Camera" : "📷 Add Another Page"}
+              </Btn>
+              {cameraPages.length > 0 && (
+                <Btn small onClick={handleCameraSubmit} disabled={cameraProcessing}>
+                  {cameraProcessing ? "Processing…" : `Analyse ${cameraPages.length} Page${cameraPages.length > 1 ? "s" : ""} →`}
+                </Btn>
+              )}
+            </div>
+            <p style={{ margin: "14px 0 0", fontSize: 11, color: "#5a7a96" }}>Tip: Hold your phone steady and ensure good lighting. Capture one page at a time for best results.</p>
+          </div>
+        </div>
+      )}
 
       {/* Modals */}
       {showShare && <ShareModal shareId={shareId} onClose={() => setShowShare(false)} />}

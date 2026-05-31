@@ -689,9 +689,7 @@ Analyse this photographed document (${cameraPages.length} page${cameraPages.leng
       };
       await updateDossier(newDossier);
     } catch (e) {
-      alert("Something went wrong processing the camera scan. Please try again.
-
-" + e.message);
+      alert("Something went wrong processing the camera scan. Please try again.\n\n" + e.message);
     }
 
     // Cleanup

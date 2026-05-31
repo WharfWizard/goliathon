@@ -437,7 +437,7 @@ export default function GoliathonApp() {
       }
 
       const existing = dossier 
-        ? `\n\nExisting case context:\nTitle: ${dossier.case_title || "Unknown"}\nOverview: ${(dossier.overview || "").substring(0, 600)}\nTimeline so far: ${(dossier.timeline || []).map(t => `[${t.date}] ${t.event}`).join("; ").substring(0, 400)}\nWitness statement so far: ${(dossier.witness_statement || "").substring(0, 400)}\nEvidence already filed (${(dossier.evidence || []).length} items): ${(dossier.evidence || []).map(e => e.title).join(", ")}\nNext steps so far: ${(typeof dossier.next_steps === 'string' ? dossier.next_steps : Array.isArray(dossier.next_steps) ? dossier.next_steps.join('\\n') : '').substring(0, 200)}\`
+        ? `\n\nExisting case context:\nTitle: ${dossier.case_title || "Unknown"}\nOverview: ${(dossier.overview || "").substring(0, 600)}\nTimeline so far: ${(dossier.timeline || []).map(t => `[${t.date}] ${t.event}`).join("; ").substring(0, 400)}\nWitness statement so far: ${(dossier.witness_statement || "").substring(0, 400)}\nEvidence already filed (${(dossier.evidence || []).length} items): ${(dossier.evidence || []).map(e => e.title).join(", ")}\nNext steps so far: ${(typeof dossier.next_steps === 'string' ? dossier.next_steps : Array.isArray(dossier.next_steps) ? dossier.next_steps.join('\\n') : '').substring(0, 200)}`
         : "\n\nThis is the FIRST piece of evidence — use it to establish the case title, parties, and initial overview.";
 
       setProcessingMsg("Analysing evidence…");
@@ -500,7 +500,7 @@ Analyse this evidence and return ONLY valid JSON with no preamble or markdown:
         overview: parsed.overview_update || current.overview,
         timeline: newTimeline,
         witness_statement: newWitness,
-        next_steps: typeof parsed.next_steps_update === 'string' ? parsed.next_steps_update : Array.isArray(parsed.next_steps_update) ? parsed.next_steps_update.join('\n') : current.next_steps,
+        next_steps: typeof parsed.next_steps_update === 'string' ? parsed.next_steps_update : Array.isArray(parsed.next_steps_update) ? parsed.next_steps_update.map((s,i) => `${i+1}. ${s}`).join('\n') : (typeof current.next_steps === 'string' ? current.next_steps : ''),
         evidence: newEvidence,
         _saved: !!current._saved,
       };

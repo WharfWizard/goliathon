@@ -684,8 +684,7 @@ Analyse this photographed document (${cameraPages.length} page${cameraPages.leng
         overview: parsed.overview_update || current.overview,
         timeline: newTimeline,
         witness_statement: newWitness,
-        next_steps: typeof parsed.next_steps_update === 'string' ? parsed.next_steps_update : Array.isArray(parsed.next_steps_update) ? parsed.next_steps_update.map((s,i) => `${i+1}. ${s}`).join('
-') : current.next_steps,
+        next_steps: typeof parsed.next_steps_update === 'string' ? parsed.next_steps_update : Array.isArray(parsed.next_steps_update) ? parsed.next_steps_update.map((s,i) => `${i+1}. ${s}`).join('\n') : (typeof current.next_steps === 'string' ? current.next_steps : ''),
         evidence: newEvidence,
       };
       await updateDossier(newDossier);

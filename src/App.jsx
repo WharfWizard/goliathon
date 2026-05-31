@@ -677,9 +677,7 @@ Analyse this photographed document (${cameraPages.length} page${cameraPages.leng
         newTimeline.push(parsed.timeline_entry);
         newTimeline.sort((a, b) => { if (!a.date) return 1; if (!b.date) return -1; return new Date(a.date) - new Date(b.date); });
       }
-      const newWitness = current.witness_statement ? current.witness_statement + "
-
-" + (parsed.witness_update || "") : parsed.witness_update || "";
+      const newWitness = current.witness_statement ? current.witness_statement + "\n\n" + (parsed.witness_update || "") : parsed.witness_update || "";
       const newDossier = {
         ...current,
         case_title: parsed.case_title || current.case_title,

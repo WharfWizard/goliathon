@@ -29,9 +29,13 @@ export default async function handler(req, res) {
 
   if (req.method === 'POST') {
     const { share_id, case_title, overview, timeline, witness_statement, next_steps, evidence } = req.body;
+    // Upsert — insert or update if share_id already exists
     const { data, error } = await supabase
       .from('dossiers')
-      .insert([{ share_id, case_title, overview, timeline, witness_statement, next_steps, evidence }])
+      .upsert(
+        { share_id, case_title, overview, timeline, witness_statement, next_steps, evidence, updated_at: new Date().toISOString() },
+        { onConflict: 'share_id' }
+      )
       .select()
       .single();
     if (error) return res.status(500).json({ error: error.message });
@@ -41,10 +45,13 @@ export default async function handler(req, res) {
   if (req.method === 'PUT') {
     const { share_id, ...updates } = req.body;
     if (!share_id) return res.status(400).json({ error: 'share_id required' });
+    // Upsert on PUT as well for reliability
     const { data, error } = await supabase
       .from('dossiers')
-      .update({ ...updates, updated_at: new Date().toISOString() })
-      .eq('share_id', share_id)
+      .upsert(
+        { share_id, ...updates, updated_at: new Date().toISOString() },
+        { onConflict: 'share_id' }
+      )
       .select()
       .single();
     if (error) return res.status(500).json({ error: error.message });

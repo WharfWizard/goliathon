@@ -57,9 +57,20 @@ async function callClaude(messages, systemOverride) {
   return data.content?.[0]?.text || "";
 }
 
-async function saveDossier(dossier) {
+async function saveDossier(dossier, isUpdate) {
+  // Always try PUT first if we think it's saved, fall back to POST
+  if (isUpdate) {
+    const res = await fetch("/api/dossier", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(dossier),
+    });
+    const data = await res.json();
+    if (!data.error) return data;
+  }
+  // POST to create new record
   const res = await fetch("/api/dossier", {
-    method: dossier._saved ? "PUT" : "POST",
+    method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(dossier),
   });
@@ -397,8 +408,8 @@ export default function GoliathonApp() {
     setDossier(newDossier);
     setSaved(false);
     try {
-      const payload = { ...newDossier, share_id: shareId, _saved: isSavedRef.current };
-      await saveDossier(payload);
+      const payload = { ...newDossier, share_id: shareId };
+      await saveDossier(payload, isSavedRef.current);
       isSavedRef.current = true;
       setSaved(true);
     } catch (e) {

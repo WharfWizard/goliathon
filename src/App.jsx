@@ -48,7 +48,7 @@ async function callClaude(messages, systemOverride) {
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
       model: "claude-sonnet-4-20250514",
-      max_tokens: 1000,
+      max_tokens: 4000,
       system: systemOverride || SYSTEM,
       messages,
     }),
@@ -127,7 +127,7 @@ function buildFullDossierText(dossier) {
     dossier.next_steps || "",
     ``,
     `─────────────────────────────────────────`,
-    `Goliathon · Get SAFE · www.goliathon.app`,
+    `Goliathon · Get SAFE · www.get-safe.org.uk`,
     `Educational use only. Not legal advice.`,
   ];
   return lines.join("\n");
@@ -339,6 +339,45 @@ export default function GoliathonApp() {
   const [readOnly, setReadOnly] = useState(false);
   const [readOnlyDossier, setReadOnlyDossier] = useState(null);
   const fileRef = useRef(null);
+  const restoreRef = useRef(null);
+
+  const handleSaveLocal = useCallback(() => {
+    if (!dossier) return;
+    const session = { version: 2, savedAt: new Date().toISOString(), shareId, dossier };
+    const blob = new Blob([JSON.stringify(session, null, 2)], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    const slug = (dossier.case_title || "session").replace(/[^a-z0-9]/gi, "_");
+    a.href = url;
+    a.download = `Goliathon_${slug}_${new Date().toISOString().slice(0,10)}.json`;
+    a.click();
+    URL.revokeObjectURL(url);
+  }, [dossier, shareId]);
+
+  const handleRestoreLocal = useCallback((e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      try {
+        const session = JSON.parse(ev.target.result);
+        if (session.dossier) {
+          setDossier(session.dossier);
+          setSaved(true);
+        }
+      } catch {
+        alert("Could not restore session. Please check the file is a valid Goliathon save.");
+      }
+    };
+    reader.readAsText(file);
+  }, []);
+
+  const handleReset = useCallback(() => {
+    if (window.confirm("Are you sure you want to reset? This will clear your current dossier. Make sure you have saved first.")) {
+      setDossier(null);
+      setSaved(false);
+    }
+  }, []);
 
   // Check if this is a shared dossier link
   useEffect(() => {
@@ -397,7 +436,9 @@ export default function GoliathonApp() {
         };
       }
 
-      const existing = dossier ? `\n\nExisting case context:\nTitle: ${dossier.case_title || "Unknown"}\nOverview: ${(dossier.overview || "").substring(0, 400)}\nEvidence count: ${(dossier.evidence || []).length}` : "\n\nThis is the FIRST piece of evidence — use it to establish the case title, parties, and initial overview.";
+      const existing = dossier 
+        ? `\n\nExisting case context:\nTitle: ${dossier.case_title || "Unknown"}\nOverview: ${(dossier.overview || "").substring(0, 600)}\nTimeline so far: ${(dossier.timeline || []).map(t => `[${t.date}] ${t.event}`).join("; ").substring(0, 400)}\nWitness statement so far: ${(dossier.witness_statement || "").substring(0, 400)}\nEvidence already filed (${(dossier.evidence || []).length} items): ${(dossier.evidence || []).map(e => e.title).join(", ")}\nNext steps so far: ${(dossier.next_steps || "").substring(0, 200)}`
+        : "\n\nThis is the FIRST piece of evidence — use it to establish the case title, parties, and initial overview.";
 
       setProcessingMsg("Analysing evidence…");
 
@@ -531,13 +572,17 @@ Analyse this evidence and return ONLY valid JSON with no preamble or markdown:
               <div style={{ fontSize: 10, letterSpacing: 4, color: YELLOW, textTransform: "uppercase", fontFamily: "'Poppins', sans-serif", marginBottom: 2 }}>Get SAFE · Academy of Life Planning</div>
               <h1 style={{ margin: 0, fontFamily: "'Poppins', sans-serif", fontSize: 28, fontWeight: 800, color: WHITE, letterSpacing: "-0.5px" }}>GOLIATHON</h1>
             </div>
-            {dossier && (
-              <div style={{ marginLeft: "auto", display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap", justifyContent: "flex-end" }}>
-                {saved && <Tag color="#7e9e82">✓ Saved</Tag>}
-                <Btn small variant="ghost" onClick={() => setShowShare(true)}>🔗 Share Dossier</Btn>
-                <Btn small onClick={() => setShowDownload(true)}>↓ Download</Btn>
+            <div style={{ marginLeft: "auto", display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap", justifyContent: "flex-end" }}>
+                {dossier && saved && <Tag color="#7e9e82">✓ Saved</Tag>}
+                <Btn small variant="subtle" onClick={handleSaveLocal}>💾 Save</Btn>
+                <label style={{ cursor: "pointer" }}>
+                  <Btn small variant="subtle" onClick={() => restoreRef.current?.click()}>📂 Restore</Btn>
+                  <input ref={restoreRef} type="file" accept=".json" style={{ display: "none" }} onChange={handleRestoreLocal} />
+                </label>
+                {dossier && <Btn small variant="subtle" onClick={handleReset}>↺ Reset</Btn>}
+                {dossier && <Btn small variant="ghost" onClick={() => setShowShare(true)}>🔗 Share</Btn>}
+                {dossier && <Btn small onClick={() => setShowDownload(true)}>↓ Download</Btn>}
               </div>
-            )}
           </div>
         </div>
       </div>
@@ -680,7 +725,7 @@ Analyse this evidence and return ONLY valid JSON with no preamble or markdown:
       {/* Footer */}
       <div style={{ borderTop: `1px solid ${BORDER}`, padding: "20px 32px", textAlign: "center", marginTop: 32 }}>
         <p style={{ margin: 0, fontSize: 11, color: "#5a7a96" }}>
-          Goliathon · Get SAFE (Support After Financial Exploitation) · Founded by Steve Conley · Academy of Life Planning · <a href="https://www.goliathon.app/" style={{ color: "#7a96b0" }}>www.goliathon.app</a> · Educational use only. Not legal, financial, or mental-health advice.
+          Goliathon · Get SAFE (Support After Financial Exploitation) · Founded by Steve Conley · Academy of Life Planning · <a href="https://www.get-safe.org.uk/" style={{ color: "#7a96b0" }}>www.get-safe.org.uk</a> · Educational use only. Not legal, financial, or mental-health advice.
         </p>
       </div>
 

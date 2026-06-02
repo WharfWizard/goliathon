@@ -360,6 +360,127 @@ function ReadOnlyDossier({ dossier }) {
   );
 }
 
+// ── PRIVACY PAGE ─────────────────────────────────────────────────────────────
+
+function PrivacyPage({ onBack }) {
+  const sections = [
+    {
+      title: "Your privacy matters",
+      body: "Get SAFE exists to support people who have been harmed by financial exploitation. We understand that many people who use Goliathon are under stress or distress. We are committed to treating your information with care, respect, and confidentiality."
+    },
+    {
+      title: "Who we are",
+      body: "Get SAFE (Support After Financial Exploitation) is an independent, survivor-led support project. Get SAFE is fiscally hosted by the Academy of Life Planning Limited (AoLP), which provides financial oversight and data protection governance. AoLP is the legal data controller. Your data is used only for Get SAFE purposes.",
+      contact: true
+    },
+    {
+      title: "What Goliathon collects",
+      bullets: [
+        "Dossier content — the evidence, documents, and text you upload or type. This is stored in a secure database (Supabase) only to enable the shareable link feature, identified by a random ID with no link to your identity.",
+        "No account or login is required. We do not collect your name, email address, or any personal identifier unless you choose to share it within your uploaded documents.",
+        "Camera scan images are compressed and sent directly to the AI for analysis. They are not stored by Goliathon.",
+        "Basic website data such as IP address or device type may be collected by Vercel (our hosting provider) and Supabase for operational purposes.",
+        "We do not use cookies for tracking. We do not use advertising. We do not sell data."
+      ]
+    },
+    {
+      title: "How your dossier data is stored",
+      body: "When you click Share Dossier, your dossier content is saved to a secure Supabase database and assigned a unique random ID (e.g. x7k9m2p4). This ID forms the share link. Anyone with the link can view the dossier. No personal identity is linked to the dossier record. You can request deletion by emailing us with your share link."
+    },
+    {
+      title: "Session files you download",
+      body: "When you use Save Session, a JSON file is downloaded to your device. This file is not stored by Goliathon — it exists only on your device. You are responsible for storing it securely. It may contain sensitive case information."
+    },
+    {
+      title: "AI processing",
+      body: "Your uploaded evidence is sent to Claude (Anthropic) for analysis via a secure server-side function. Anthropic's privacy policy applies to this processing. We do not store the raw content of your uploads beyond what appears in your dossier panels."
+    },
+    {
+      title: "Why we use your information",
+      bullets: [
+        "To build and display your evidence dossier within the app",
+        "To enable the secure shareable link feature",
+        "To improve how Goliathon works"
+      ]
+    },
+    {
+      title: "Your rights",
+      bullets: [
+        "See the information we hold — email hello@get-safe.org.uk with your share link",
+        "Ask for corrections or deletion of your dossier",
+        "Withdraw consent — request deletion at any time",
+        "Raise concerns with the Information Commissioner's Office (ICO) at ico.org.uk"
+      ]
+    },
+    {
+      title: "Vulnerable adults",
+      body: "We recognise that many people who use Goliathon may be vulnerable. We take extra care in how we communicate, store information, and make decisions about data use. You are not a case number. You are a person. Your information is handled with care, dignity, and respect."
+    },
+    {
+      title: "Changes to this policy",
+      body: "We may update this policy from time to time. Any significant changes will be noted here. Last updated: June 2026."
+    },
+  ];
+
+  return (
+    <div style={{ fontFamily: "'Open Sans', sans-serif", background: NAVY, minHeight: "100vh", width: "100%", color: LIGHT }}>
+      {/* Header */}
+      <div style={{ background: NAVY, borderBottom: `3px solid ${YELLOW}`, padding: "16px 24px" }}>
+        <div style={{ maxWidth: 800, margin: "0 auto", display: "flex", alignItems: "center", gap: 16 }}>
+          <img src="/getsafe-logo.png" alt="Get SAFE" style={{ width: 44, height: 44, objectFit: "contain", flexShrink: 0 }} />
+          <div style={{ flex: 1 }}>
+            <div style={{ fontSize: 9, letterSpacing: 3, color: YELLOW, textTransform: "uppercase", fontFamily: "'Poppins', sans-serif" }}>Get SAFE · Goliathon</div>
+            <h1 style={{ margin: 0, fontFamily: "'Poppins', sans-serif", fontSize: 22, fontWeight: 800, color: WHITE }}>Privacy Policy</h1>
+          </div>
+          <Btn small variant="subtle" onClick={onBack}>← Back</Btn>
+        </div>
+      </div>
+
+      {/* Content */}
+      <div style={{ maxWidth: 800, margin: "0 auto", padding: "40px 24px" }}>
+        <div style={{ background: PANEL, border: `1px solid ${BORDER}`, borderRadius: 12, padding: "12px 24px", marginBottom: 32, display: "flex", alignItems: "center", gap: 12 }}>
+          <span style={{ fontSize: 18 }}>🔒</span>
+          <p style={{ margin: 0, fontSize: 13, color: "#a0b4c8", lineHeight: 1.6 }}>
+            This policy covers how Goliathon handles your information. Goliathon is a tool of <strong style={{ color: WHITE }}>Get SAFE (Support After Financial Exploitation)</strong>, fiscally hosted by the Academy of Life Planning Limited — the legal data controller.
+          </p>
+        </div>
+
+        {sections.map((s, i) => (
+          <div key={i} style={{ marginBottom: 32 }}>
+            <h2 style={{ fontFamily: "'Poppins', sans-serif", fontSize: 17, fontWeight: 700, color: YELLOW, margin: "0 0 12px", borderBottom: `1px solid ${BORDER}`, paddingBottom: 8 }}>{s.title}</h2>
+            {s.body && <p style={{ margin: "0 0 8px", fontSize: 14, color: LIGHT, lineHeight: 1.8 }}>{s.body}</p>}
+            {s.bullets && (
+              <ul style={{ margin: 0, paddingLeft: 20 }}>
+                {s.bullets.map((b, j) => (
+                  <li key={j} style={{ fontSize: 14, color: LIGHT, lineHeight: 1.8, marginBottom: 6 }}>{b}</li>
+                ))}
+              </ul>
+            )}
+            {s.contact && (
+              <div style={{ marginTop: 12, background: "#001e3d", border: `1px solid ${BORDER}`, borderRadius: 8, padding: "12px 16px" }}>
+                <p style={{ margin: "0 0 4px", fontSize: 13, color: "#a0b4c8" }}>📧 <a href="mailto:hello@get-safe.org.uk" style={{ color: YELLOW }}>hello@get-safe.org.uk</a></p>
+                <p style={{ margin: 0, fontSize: 13, color: "#7a96b0" }}>📍 9 Franklin Way, Spilsby, Lincolnshire, PE23 5GG</p>
+              </div>
+            )}
+          </div>
+        ))}
+
+        <div style={{ background: `linear-gradient(135deg, ${YELLOW}20, transparent)`, border: `1px solid ${YELLOW}40`, borderRadius: 12, padding: 24, textAlign: "center", marginTop: 40 }}>
+          <p style={{ margin: "0 0 8px", fontFamily: "'Poppins', sans-serif", fontWeight: 700, fontSize: 16, color: WHITE }}>A final reassurance</p>
+          <p style={{ margin: 0, fontSize: 15, color: "#a0b4c8", fontStyle: "italic", lineHeight: 1.8 }}>You are not a case number. You are a person.<br/>Your information is handled with care, dignity, and respect.</p>
+        </div>
+      </div>
+
+      {/* Footer */}
+      <div style={{ borderTop: `1px solid ${BORDER}`, padding: "20px 24px", textAlign: "center", marginTop: 32 }}>
+        <p style={{ margin: 0, fontSize: 11, color: "#5a7a96" }}>
+          Get SAFE · Academy of Life Planning · <a href="mailto:hello@get-safe.org.uk" style={{ color: "#7a96b0" }}>hello@get-safe.org.uk</a> · <a href="https://www.get-safe.org.uk" style={{ color: "#7a96b0" }}>www.get-safe.org.uk</a>
+        </p>
+      </div>
+    </div>
+  );
+}
+
 // ── MAIN APP ──────────────────────────────────────────────────────────────────
 
 export default function GoliathonApp() {
@@ -375,6 +496,7 @@ export default function GoliathonApp() {
   const [saved, setSaved] = useState(false);
   const isSavedRef = useRef(false);
   const [readOnly, setReadOnly] = useState(false);
+  const [showPrivacy, setShowPrivacy] = useState(false);
   const [readOnlyDossier, setReadOnlyDossier] = useState(null);
   const fileRef = useRef(null);
   const restoreRef = useRef(null);
@@ -422,16 +544,17 @@ export default function GoliathonApp() {
     }
   }, []);
 
-  // Check if this is a shared dossier link
+  // Check if this is a shared dossier link or privacy page
   useEffect(() => {
     const path = window.location.pathname;
-    const match = path.match(/\/dossier\/([a-z0-9]+)/i);
-    if (match) {
+    const dossierMatch = path.match(/\/dossier\/([a-z0-9]+)/i);
+    if (dossierMatch) {
       setReadOnly(true);
-      loadDossier(match[1]).then(data => {
+      loadDossier(dossierMatch[1]).then(data => {
         if (data) setReadOnlyDossier(data);
       });
     }
+    if (path === "/privacy") setShowPrivacy(true);
   }, []);
 
   const updateDossier = useCallback(async (newDossier) => {
@@ -700,6 +823,9 @@ Analyse this photographed document (${cameraPages.length} page${cameraPages.leng
     setProcessingMsg("");
   }, [cameraPages, dossier, updateDossier]);
 
+  // Privacy page
+  if (showPrivacy) return <PrivacyPage onBack={() => { setShowPrivacy(false); window.history.pushState({}, "", "/"); }} />;
+
   // Read-only view
   if (readOnly) {
     if (!readOnlyDossier) return (
@@ -881,7 +1007,7 @@ Analyse this photographed document (${cameraPages.length} page${cameraPages.leng
       {/* Footer */}
       <div style={{ borderTop: `1px solid ${BORDER}`, padding: "20px 32px", textAlign: "center", marginTop: 32 }}>
         <p style={{ margin: 0, fontSize: 11, color: "#5a7a96" }}>
-          Goliathon · Get SAFE (Support After Financial Exploitation) · Founded by Steve Conley · Academy of Life Planning · <a href="https://www.get-safe.org.uk/" style={{ color: "#7a96b0" }}>www.get-safe.org.uk</a> · Educational use only. Not legal, financial, or mental-health advice.
+          Goliathon · Get SAFE (Support After Financial Exploitation) · Founded by Steve Conley · Academy of Life Planning · <a href="https://www.get-safe.org.uk/" style={{ color: "#7a96b0" }}>www.get-safe.org.uk</a> · <a href="/privacy" onClick={e => { e.preventDefault(); setShowPrivacy(true); window.history.pushState({}, "", "/privacy"); }} style={{ color: "#7a96b0" }}>Privacy Policy</a> · Educational use only. Not legal, financial, or mental-health advice.
         </p>
       </div>
 

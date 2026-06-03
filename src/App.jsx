@@ -51,6 +51,267 @@ function compressImage(file){
   });
 }
 function downloadText(filename,content){const blob=new Blob([content],{type:"text/plain"});const url=URL.createObjectURL(blob);const a=document.createElement("a");a.href=url;a.download=filename;a.click();URL.revokeObjectURL(url);}
+
+// ── PDF GENERATION ────────────────────────────────────────────────────────────
+async function loadLogoBase64(){
+  return new Promise((resolve)=>{
+    const img=new Image();
+    img.crossOrigin="anonymous";
+    img.onload=()=>{
+      const canvas=document.createElement("canvas");
+      canvas.width=img.width;canvas.height=img.height;
+      canvas.getContext("2d").drawImage(img,0,0);
+      resolve(canvas.toDataURL("image/png").split(",")[1]);
+    };
+    img.onerror=()=>resolve(null);
+    img.src="/getsafe-logo.png";
+  });
+}
+
+function createPdfDoc(){
+  // jsPDF loaded via CDN in index.html — access via window
+  const {jsPDF}=window.jspdf;
+  return new jsPDF({orientation:"portrait",unit:"mm",format:"a4"});
+}
+
+function pdfAddHeader(doc,logoB64,caseTitle,sectionTitle){
+  const W=210,margin=18;
+  // Navy header bar
+  doc.setFillColor(0,39,77);
+  doc.rect(0,0,W,28,"F");
+  // Yellow rule
+  doc.setFillColor(255,199,44);
+  doc.rect(0,28,W,1.5,"F");
+  // Logo
+  if(logoB64){try{doc.addImage("data:image/png;base64,"+logoB64,"PNG",margin,4,16,16);}catch{}}
+  // Title text
+  doc.setTextColor(255,199,44);
+  doc.setFontSize(7);
+  doc.setFont("helvetica","bold");
+  doc.text("GET SAFE · ACADEMY OF LIFE PLANNING",margin+20,10);
+  doc.setTextColor(255,255,255);
+  doc.setFontSize(14);
+  doc.text("GOLIATHON",margin+20,18);
+  // Section title right-aligned
+  doc.setTextColor(160,180,200);
+  doc.setFontSize(8);
+  doc.setFont("helvetica","normal");
+  doc.text(sectionTitle,W-margin,18,{align:"right"});
+  // Case title below rule
+  if(caseTitle){
+    doc.setTextColor(255,255,255);
+    doc.setFontSize(9);
+    doc.setFont("helvetica","bold");
+    doc.text(caseTitle,margin,33);
+  }
+  return caseTitle?38:33;
+}
+
+function pdfAddFooter(doc,pageNum,totalPages){
+  const W=210,margin=18,y=290;
+  doc.setDrawColor(0,58,110);
+  doc.line(margin,y-3,W-margin,y-3);
+  doc.setTextColor(90,122,150);
+  doc.setFontSize(7);
+  doc.setFont("helvetica","normal");
+  doc.text("Goliathon · Get SAFE (Support After Financial Exploitation) · Educational use only. Not legal, financial, or mental-health advice.",margin,y+1);
+  doc.text(`Page ${pageNum} of ${totalPages}`,W-margin,y+1,{align:"right"});
+}
+
+function pdfWrappedText(doc,text,x,y,maxWidth,fontSize,bold=false,color=[229,240,244]){
+  doc.setFontSize(fontSize);
+  doc.setFont("helvetica",bold?"bold":"normal");
+  doc.setTextColor(...color);
+  const lines=doc.splitTextToSize(text||"",maxWidth);
+  const lineHeight=fontSize*0.45;
+  return{lines,height:lines.length*lineHeight,lineHeight};
+}
+
+function pdfSection(doc,title,y,margin,contentWidth){
+  // Section header with yellow left border
+  doc.setFillColor(255,199,44);
+  doc.rect(margin,y,2,6,"F");
+  doc.setFillColor(0,42,87);
+  doc.rect(margin+2,y,contentWidth-2,6,"F");
+  doc.setTextColor(255,255,255);
+  doc.setFontSize(9);
+  doc.setFont("helvetica","bold");
+  doc.text(title,margin+6,y+4.2);
+  return y+8;
+}
+
+function checkNewPage(doc,y,needed,logoB64,caseTitle,sectionTitle,pageNums){
+  if(y+needed>280){
+    pdfAddFooter(doc,pageNums.current,999);
+    doc.addPage();
+    pageNums.current++;
+    const newY=pdfAddHeader(doc,logoB64,caseTitle,sectionTitle);
+    return newY+4;
+  }
+  return y;
+}
+
+async function downloadPdf(sectionKey,dossier){
+  if(!window.jspdf){alert("PDF library not loaded yet. Please wait a moment and try again.");return;}
+  const logoB64=await loadLogoBase64();
+  const doc=createPdfDoc();
+  const margin=18,W=210,contentWidth=W-margin*2;
+  const pageNums={current:1};
+  const dateStr=new Date().toLocaleDateString("en-GB",{day:"numeric",month:"long",year:"numeric"});
+  const caseTitle=dossier.case_title||"Evidence Dossier";
+
+  const sections={
+    overview:{title:"Case Overview",data:()=>[{type:"body",text:dossier.overview||"No overview available."}]},
+    timeline:{title:"Chronological Timeline",data:()=>(dossier.timeline||[]).map((t,i)=>({type:"timeline",num:i+1,date:t.date||"Date unknown",event:t.event,evidence:t.evidence}))},
+    statement:{title:"Witness Statement",data:()=>[{type:"body",text:dossier.witness_statement||"No statement available."}]},
+    evidence:{title:`Evidence Library — ${(dossier.evidence||[]).length} Items`,data:()=>(dossier.evidence||[]).map((e,i)=>({type:"evidence",num:i+1,title:e.title,date:e.date,docType:e.type,summary:e.summary,redFlags:e.red_flags}))},
+    nextsteps:{title:"Next Steps",data:()=>[{type:"body",text:dossier.next_steps||"No next steps available."}]},
+    complete:{title:"Complete Evidence Dossier",data:()=>{
+      const items=[];
+      items.push({type:"sectionHeader",title:"Case Overview"});
+      items.push({type:"body",text:dossier.overview||""});
+      items.push({type:"sectionHeader",title:"Chronological Timeline"});
+      (dossier.timeline||[]).forEach((t,i)=>items.push({type:"timeline",num:i+1,date:t.date||"Date unknown",event:t.event,evidence:t.evidence}));
+      items.push({type:"sectionHeader",title:"Witness Statement"});
+      items.push({type:"body",text:dossier.witness_statement||""});
+      items.push({type:"sectionHeader",title:`Evidence Library — ${(dossier.evidence||[]).length} Items`});
+      (dossier.evidence||[]).forEach((e,i)=>items.push({type:"evidence",num:i+1,title:e.title,date:e.date,docType:e.type,summary:e.summary,redFlags:e.red_flags}));
+      items.push({type:"sectionHeader",title:"Next Steps"});
+      items.push({type:"body",text:dossier.next_steps||""});
+      return items;
+    }},
+  };
+
+  const sec=sections[sectionKey];
+  let y=pdfAddHeader(doc,logoB64,caseTitle,sec.title);
+  y+=4;
+
+  // Generated date
+  doc.setTextColor(100,130,160);
+  doc.setFontSize(7.5);
+  doc.setFont("helvetica","normal");
+  doc.text(`Generated: ${dateStr}`,margin,y);
+  y+=6;
+
+  if(sectionKey!=="complete"){
+    y=pdfSection(doc,sec.title,y,margin,contentWidth);
+    y+=2;
+  }
+
+  const items=sec.data();
+
+  for(const item of items){
+    if(item.type==="sectionHeader"){
+      y=checkNewPage(doc,y,16,logoB64,caseTitle,sec.title,pageNums);
+      y+=4;
+      y=pdfSection(doc,item.title,y,margin,contentWidth);
+      y+=4;
+      continue;
+    }
+
+    if(item.type==="body"){
+      const {lines,lineHeight}=pdfWrappedText(doc,item.text,margin,y,contentWidth,9,false,[200,220,235]);
+      for(const line of lines){
+        y=checkNewPage(doc,y,lineHeight*1.5,logoB64,caseTitle,sec.title,pageNums);
+        doc.setFontSize(9);doc.setFont("helvetica","normal");doc.setTextColor(200,220,235);
+        doc.text(line,margin,y);
+        y+=lineHeight*1.4;
+      }
+      y+=4;
+      continue;
+    }
+
+    if(item.type==="timeline"){
+      // Estimate height needed
+      const eventLines=doc.splitTextToSize(item.event||"",contentWidth-22);
+      const neededH=6+eventLines.length*4.5+(item.evidence?4:0)+4;
+      y=checkNewPage(doc,y,neededH,logoB64,caseTitle,sec.title,pageNums);
+      // Number circle
+      doc.setFillColor(255,199,44);
+      doc.circle(margin+4,y+3,3.5,"F");
+      doc.setTextColor(0,39,77);doc.setFontSize(7);doc.setFont("helvetica","bold");
+      doc.text(String(item.num),margin+4,y+3.7,{align:"center"});
+      // Date
+      doc.setTextColor(255,199,44);doc.setFontSize(8);doc.setFont("helvetica","bold");
+      doc.text(item.date,margin+10,y+2.5);
+      // Event
+      doc.setTextColor(200,220,235);doc.setFontSize(8.5);doc.setFont("helvetica","normal");
+      let ey=y+6.5;
+      for(const line of eventLines){doc.text(line,margin+10,ey);ey+=4.2;}
+      // Evidence ref
+      if(item.evidence){
+        doc.setTextColor(90,122,150);doc.setFontSize(7);
+        doc.text(item.evidence,margin+10,ey);ey+=3.5;
+      }
+      // Connector line
+      if(item.num<(dossier.timeline||[]).length){
+        doc.setDrawColor(0,58,110);doc.setLineWidth(0.3);
+        doc.line(margin+4,y+7,margin+4,ey+1);
+      }
+      y=ey+3;
+      continue;
+    }
+
+    if(item.type==="evidence"){
+      // Calculate all text heights first
+      const titleLines=doc.splitTextToSize(`#${String(item.num).padStart(3,"0")}  ${item.title||""}`,contentWidth-8);
+      const summaryLines=doc.splitTextToSize(item.summary||"",contentWidth-12);
+      const rfLines=item.redFlags?doc.splitTextToSize("⚠  "+item.redFlags,contentWidth-12):[];
+      const boxH=4+titleLines.length*4.5+3+(item.date||item.docType?5:0)+summaryLines.length*4+rfLines.length*4+4;
+      y=checkNewPage(doc,y,boxH+3,logoB64,caseTitle,sec.title,pageNums);
+      // Card background
+      doc.setFillColor(0,30,61);
+      doc.roundedRect(margin,y,contentWidth,boxH,2,2,"F");
+      doc.setFillColor(255,199,44);
+      doc.rect(margin,y,2,boxH,"F");
+      // Title
+      let cy=y+5;
+      doc.setTextColor(255,255,255);doc.setFontSize(9);doc.setFont("helvetica","bold");
+      for(const line of titleLines){doc.text(line,margin+6,cy);cy+=4.5;}
+      // Tags
+      if(item.date||item.docType){
+        if(item.date){
+          doc.setFillColor(255,199,44,0.2);doc.setDrawColor(255,199,44);doc.setLineWidth(0.3);
+          const tw=doc.getTextWidth(item.date)+4;
+          doc.roundedRect(margin+6,cy-2,tw,4.5,1,1,"S");
+          doc.setTextColor(255,199,44);doc.setFontSize(7);doc.setFont("helvetica","bold");
+          doc.text(item.date,margin+8,cy+1.2);
+          const nextX=margin+6+tw+3;
+          if(item.docType){
+            const tw2=doc.getTextWidth(item.docType)+4;
+            doc.setDrawColor(122,150,176);
+            doc.roundedRect(nextX,cy-2,tw2,4.5,1,1,"S");
+            doc.setTextColor(122,150,176);
+            doc.text(item.docType,nextX+2,cy+1.2);
+          }
+        } else if(item.docType){
+          const tw2=doc.getTextWidth(item.docType)+4;
+          doc.setDrawColor(122,150,176);doc.setLineWidth(0.3);
+          doc.roundedRect(margin+6,cy-2,tw2,4.5,1,1,"S");
+          doc.setTextColor(122,150,176);doc.setFontSize(7);doc.setFont("helvetica","bold");
+          doc.text(item.docType,margin+8,cy+1.2);
+        }
+        cy+=6;
+      }
+      // Summary
+      doc.setTextColor(200,220,235);doc.setFontSize(8.5);doc.setFont("helvetica","normal");
+      for(const line of summaryLines){doc.text(line,margin+6,cy);cy+=4;}
+      // Red flags
+      if(rfLines.length){
+        doc.setTextColor(229,115,115);doc.setFontSize(7.5);
+        for(const line of rfLines){doc.text(line,margin+6,cy);cy+=4;}
+      }
+      y+=boxH+4;
+      continue;
+    }
+  }
+
+  // Fix total pages in footers — render footer on last page
+  pdfAddFooter(doc,pageNums.current,pageNums.current);
+
+  const filename=`${caseTitle.replace(/[^a-z0-9]/gi,"_")}_${sectionKey}.pdf`;
+  doc.save(filename);
+}
 function buildFullDossierText(d){return["GOLIATHON EVIDENCE DOSSIER","Get SAFE (Support After Financial Exploitation)",`Generated: ${formatDate(new Date().toISOString())}`,"","═══════════════════════════════","CASE OVERVIEW","═══════════════════════════════",d.overview||"","","═══════════════════════════════","CHRONOLOGICAL TIMELINE","═══════════════════════════════",...(d.timeline||[]).map((t,i)=>`${i+1}. [${t.date||"Date unknown"}] ${t.event}`),"","═══════════════════════════════","WITNESS STATEMENT","═══════════════════════════════",d.witness_statement||"","","═══════════════════════════════",`EVIDENCE LIBRARY (${(d.evidence||[]).length} items)`,"═══════════════════════════════",...(d.evidence||[]).map((e,i)=>`[${String(i+1).padStart(3,"0")}] ${e.title}\n${e.summary}`),"","═══════════════════════════════","NEXT STEPS","═══════════════════════════════",d.next_steps||"","─────────────────────────────","Goliathon · Get SAFE · www.get-safe.org.uk","Educational use only. Not legal advice."].join("\n");}
 function caseStrength(d){if(!d)return 0;let s=0;s+=Math.min((d.evidence||[]).length*10,40);s+=Math.min((d.timeline||[]).length*5,20);s+=(d.witness_statement||"").length>200?15:(d.witness_statement||"").length>50?8:0;s+=(d.next_steps||"").length>100?10:0;s+=(d.overview||"").length>100?15:0;return Math.min(s,100);}
 
@@ -146,14 +407,13 @@ function ShareModal({shareId,onClose}){
 }
 
 function DownloadModal({dossier,onClose}){
-  const slug=(dossier.case_title||"dossier").replace(/[^a-z0-9]/gi,"_");
   const opts=[
-    {label:"Complete Dossier",desc:"All sections",icon:"📁",action:()=>downloadText(`${slug}_Complete.txt`,buildFullDossierText(dossier))},
-    {label:"Case Overview",desc:"Summary",icon:"📋",action:()=>downloadText(`${slug}_Overview.txt`,dossier.overview||"")},
-    {label:"Timeline",desc:"Chronological events",icon:"📅",action:()=>downloadText(`${slug}_Timeline.txt`,(dossier.timeline||[]).map((t,i)=>`${i+1}. [${t.date||"Unknown"}] ${t.event}`).join("\n"))},
-    {label:"Witness Statement",desc:"First-person account",icon:"📝",action:()=>downloadText(`${slug}_Statement.txt`,dossier.witness_statement||"")},
-    {label:"Evidence Library",desc:"All items",icon:"🗂️",action:()=>downloadText(`${slug}_Evidence.txt`,(dossier.evidence||[]).map((e,i)=>`[${String(i+1).padStart(3,"0")}] ${e.title}\n${e.summary}`).join("\n\n"))},
-    {label:"Next Steps",desc:"Priority actions",icon:"📌",action:()=>downloadText(`${slug}_NextSteps.txt`,dossier.next_steps||"")},
+    {label:"Complete Dossier",desc:"All sections — full branded PDF",icon:"📁",action:()=>downloadPdf("complete",dossier)},
+    {label:"Case Overview",desc:"Summary and context",icon:"📋",action:()=>downloadPdf("overview",dossier)},
+    {label:"Timeline",desc:"Chronological events",icon:"📅",action:()=>downloadPdf("timeline",dossier)},
+    {label:"Witness Statement",desc:"First-person account",icon:"📝",action:()=>downloadPdf("statement",dossier)},
+    {label:"Evidence Library",desc:"All items with cover notes",icon:"🗂️",action:()=>downloadPdf("evidence",dossier)},
+    {label:"Next Steps",desc:"Priority actions",icon:"📌",action:()=>downloadPdf("nextsteps",dossier)},
   ];
   return(<div style={{position:"fixed",inset:0,background:"#000000cc",display:"flex",alignItems:"center",justifyContent:"center",zIndex:1000}}>
     <div style={{background:PANEL,border:`1px solid ${BORDER}`,borderRadius:16,padding:24,maxWidth:460,width:"90%",maxHeight:"90vh",overflowY:"auto"}}>
@@ -464,15 +724,15 @@ export default function GoliathonApp(){
       {dossier&&(
         <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit, minmax(300px, 1fr))",gap:16}}>
           <div>
-            <Panel title="Case Overview" icon="📋" action={<Btn small variant="ghost" onClick={()=>downloadText("overview.txt",dossier.overview||"")}>↓</Btn>}>{dossier.overview?<p style={{margin:0,fontSize:13,lineHeight:1.8,color:LIGHT}}>{dossier.overview}</p>:<EmptyState text="Building overview…"/>}</Panel>
-            <Panel title="Witness Statement" icon="📝" action={<Btn small variant="ghost" onClick={()=>downloadText("statement.txt",dossier.witness_statement||"")}>↓</Btn>}>{dossier.witness_statement?<p style={{margin:0,fontSize:13,lineHeight:1.9,color:LIGHT,whiteSpace:"pre-wrap"}}>{dossier.witness_statement}</p>:<EmptyState text="Building statement…"/>}</Panel>
-            <Panel title="Next Steps" icon="📌" action={<Btn small variant="ghost" onClick={()=>downloadText("next_steps.txt",dossier.next_steps||"")}>↓</Btn>}>{dossier.next_steps?<p style={{margin:0,fontSize:13,lineHeight:1.8,color:LIGHT,whiteSpace:"pre-wrap"}}>{dossier.next_steps}</p>:<EmptyState text="Next steps will appear here…"/>}</Panel>
+            <Panel title="Case Overview" icon="📋" action={<Btn small variant="ghost" onClick={()=>downloadPdf("overview",dossier)}>↓</Btn>}>{dossier.overview?<p style={{margin:0,fontSize:13,lineHeight:1.8,color:LIGHT}}>{dossier.overview}</p>:<EmptyState text="Building overview…"/>}</Panel>
+            <Panel title="Witness Statement" icon="📝" action={<Btn small variant="ghost" onClick={()=>downloadPdf("statement",dossier)}>↓</Btn>}>{dossier.witness_statement?<p style={{margin:0,fontSize:13,lineHeight:1.9,color:LIGHT,whiteSpace:"pre-wrap"}}>{dossier.witness_statement}</p>:<EmptyState text="Building statement…"/>}</Panel>
+            <Panel title="Next Steps" icon="📌" action={<Btn small variant="ghost" onClick={()=>downloadPdf("nextsteps",dossier)}>↓</Btn>}>{dossier.next_steps?<p style={{margin:0,fontSize:13,lineHeight:1.8,color:LIGHT,whiteSpace:"pre-wrap"}}>{dossier.next_steps}</p>:<EmptyState text="Next steps will appear here…"/>}</Panel>
           </div>
           <div>
-            <Panel title="Timeline" icon="📅" action={<Btn small variant="ghost" onClick={()=>downloadText("timeline.txt",(dossier.timeline||[]).map((t,i)=>`${i+1}. [${t.date||"Unknown"}] ${t.event}`).join("\n"))}>↓</Btn>}>
+            <Panel title="Timeline" icon="📅" action={<Btn small variant="ghost" onClick={()=>downloadPdf("timeline",dossier)}>↓</Btn>}>
               {!(dossier.timeline||[]).length?<EmptyState text="Timeline building…"/>:(dossier.timeline||[]).map((t,i)=>(<div key={i} style={{display:"flex",gap:10,marginBottom:11,paddingBottom:11,borderBottom:i<dossier.timeline.length-1?`1px solid ${BORDER}`:"none"}}><div style={{width:24,height:24,background:YELLOW,borderRadius:"50%",display:"flex",alignItems:"center",justifyContent:"center",fontFamily:"'Poppins', sans-serif",fontWeight:700,fontSize:10,color:NAVY,flexShrink:0}}>{i+1}</div><div><div style={{fontSize:11,color:YELLOW,fontWeight:600,marginBottom:2}}>{t.date||"Date unknown"}</div><div style={{fontSize:13,color:LIGHT,lineHeight:1.6}}>{t.event}</div></div></div>))}
             </Panel>
-            <Panel title={`Evidence Library — ${evidenceCount} item${evidenceCount!==1?"s":""}`} icon="🗂️" action={<Btn small variant="ghost" onClick={()=>downloadText("evidence.txt",(dossier.evidence||[]).map((e,i)=>`[${String(i+1).padStart(3,"0")}] ${e.title}\n${e.summary}`).join("\n\n"))}>↓</Btn>}>
+            <Panel title={`Evidence Library — ${evidenceCount} item${evidenceCount!==1?"s":""}`} icon="🗂️" action={<Btn small variant="ghost" onClick={()=>downloadPdf("evidence",dossier)}>↓</Btn>}>
               {!evidenceCount?<EmptyState text="No evidence uploaded yet."/>:[...(dossier.evidence||[])].reverse().map((e,i)=>{
                 const ri=evidenceCount-1-i;
                 return(<div key={i} style={{background:"#001e3d",border:`1px solid ${BORDER}`,borderRadius:10,padding:"10px 12px",marginBottom:8}}>

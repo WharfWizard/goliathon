@@ -684,9 +684,35 @@ Analyse this evidence and return ONLY valid JSON with no preamble or markdown:
 
   const handleFile = useCallback(async (file) => {
     if (!file) return;
-    const allowed = ["image/jpeg", "image/png", "image/gif", "image/webp", "application/pdf", "text/plain"];
-    if (!allowed.includes(file.type)) {
-      alert("Please upload an image (JPG/PNG), PDF, or TXT file.");
+    const ext = file.name.split('.').pop().toLowerCase();
+    const allowedExts = ["jpg", "jpeg", "png", "gif", "webp", "pdf", "txt", "html", "htm", "doc", "docx", "msg"];
+    const allowedTypes = ["image/jpeg", "image/png", "image/gif", "image/webp", "application/pdf", "text/plain"];
+    const needsConversion = ["html", "htm", "doc", "docx", "msg"].includes(ext);
+    
+    if (!allowedExts.includes(ext) && !allowedTypes.includes(file.type)) {
+      alert("Unsupported file type. Goliathon accepts: JPG, PNG, PDF, TXT, HTML, DOC, DOCX, and MSG files.");
+      return;
+    }
+
+    // Route to conversion handler for office/html formats
+    if (needsConversion) {
+      setProcessing(true);
+      setProcessingMsg(`Converting ${file.name}…`);
+      try {
+        const base64 = await fileToBase64(file);
+        const res = await fetch("/api/convert", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ filename: file.name, mediaType: file.type, data: base64 }),
+        });
+        const data = await res.json();
+        if (data.error) throw new Error(data.error);
+        await processEvidence(data.text, file.name, "text/plain");
+      } catch (e) {
+        alert("Could not convert this file: " + e.message);
+        setProcessing(false);
+        setProcessingMsg("");
+      }
       return;
     }
     const base64 = await fileToBase64(file);
@@ -912,11 +938,11 @@ Analyse this photographed document (${cameraPages.length} page${cameraPages.leng
                 <Btn small variant="subtle" onClick={e => { e.stopPropagation(); setShowCamera(true); setCameraPages([]); }}>📷 Camera Scan</Btn>
                 <Btn small variant="subtle" onClick={e => { e.stopPropagation(); setShowUrl(true); }}>🔗 Add URL</Btn>
               </div>
-              <p style={{ margin: "16px 0 0", fontSize: 12, color: "#5a7a96" }}>Accepts photos (JPG/PNG), PDFs, text files, or camera scan</p>
+              <p style={{ margin: "16px 0 0", fontSize: 12, color: "#5a7a96" }}>Accepts JPG, PNG, PDF, TXT, HTML, DOC, DOCX, MSG, or camera scan</p>
             </div>
           )}
         </div>
-        <input ref={fileRef} type="file" accept="image/*,.pdf,.txt" style={{ display: "none" }} onChange={e => handleFile(e.target.files[0])} />
+        <input ref={fileRef} type="file" accept="image/*,.pdf,.txt,.html,.htm,.doc,.docx,.msg" style={{ display: "none" }} onChange={e => handleFile(e.target.files[0])} />
         <input ref={cameraRef} type="file" accept="image/*" capture="environment" multiple style={{ display: "none" }} onChange={handleCameraCapture} />
 
         {/* URL Input */}

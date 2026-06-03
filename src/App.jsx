@@ -19,8 +19,25 @@ async function loadDossierFromDb(id){const r=await fetch(`/api/dossier?share_id=
 async function deleteDossierFromDb(id){const r=await fetch("/api/dossier",{method:"DELETE",headers:{"Content-Type":"application/json"},body:JSON.stringify({share_id:id})});return r.ok;}
 
 // LocalStorage
-const LS_CASES="goliathon_cases",LS_ACTIVE="goliathon_active",LS_WELCOMED="goliathon_welcomed";
-function loadCases(){try{return JSON.parse(localStorage.getItem(LS_CASES)||"[]");}catch{return[];}}
+const LS_CASES="goliathon_cases_v3",LS_ACTIVE="goliathon_active_v3",LS_WELCOMED="goliathon_welcomed";
+const LS_VERSION="goliathon_version";
+const CURRENT_VERSION="3";
+
+// Clear any stale data from previous versions
+(function(){
+  try{
+    const stored=localStorage.getItem(LS_VERSION);
+    if(stored!==CURRENT_VERSION){
+      // Clear old keys from previous versions
+      ["goliathon_cases","goliathon_active","goliathon_cases_v2","goliathon_active_v2"].forEach(k=>{
+        try{localStorage.removeItem(k);}catch{}
+      });
+      localStorage.setItem(LS_VERSION,CURRENT_VERSION);
+    }
+  }catch{}
+})();
+
+function loadCases(){try{const d=JSON.parse(localStorage.getItem(LS_CASES)||"[]");return Array.isArray(d)?d:[];}catch{return[];}}
 function saveCases(c){try{localStorage.setItem(LS_CASES,JSON.stringify(c));}catch{}}
 function getActiveId(){try{return localStorage.getItem(LS_ACTIVE)||null;}catch{return null;}}
 function hasBeenWelcomed(){try{return!!localStorage.getItem(LS_WELCOMED);}catch{return false;}}
@@ -535,7 +552,16 @@ export default function GoliathonApp(){
     reader.readAsText(file);
   },[cases,activeId,updateCases,setActiveId]);
 
-  const handleReset=useCallback(()=>{if(!window.confirm("Reset this case? All dossier content will be cleared."))return;const updated=cases.map(c=>c.id===activeId?{...c,dossier:null}:c);updateCases(updated);setSaved(false);isSavedRef.current=false;},[cases,activeId,updateCases]);
+  const handleReset=useCallback(()=>{
+    if(!window.confirm("Reset this case? All dossier content will be cleared."))return;
+    const newCaseId=genId();
+    const freshCase={id:newCaseId,title:"My Case",dossier:null,shareId:genId()};
+    const updated=cases.map(c=>c.id===activeId?freshCase:c);
+    updateCases(updated);
+    setActiveId(newCaseId);
+    isSavedRef.current=false;
+    setSaved(false);
+  },[cases,activeId,updateCases,setActiveId]);
 
   const handleDeleteDossier=useCallback(async()=>{
     if(!window.confirm("Permanently delete this dossier from the shared database? The share link will stop working."))return;

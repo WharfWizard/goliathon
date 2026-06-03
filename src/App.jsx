@@ -353,7 +353,7 @@ function StrengthMeter({dossier}){
   return(<div style={{background:PANEL,border:`1px solid ${BORDER}`,borderRadius:10,padding:"12px 16px",marginBottom:16}}><div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:8}}><span style={{fontSize:12,color:"#a0b4c8",fontFamily:"'Poppins', sans-serif",fontWeight:600}}>Case Strength</span><span style={{fontSize:12,color,fontFamily:"'Poppins', sans-serif",fontWeight:700}}>{label} · {score}%</span></div><div style={{height:6,background:"#001e3d",borderRadius:3,overflow:"hidden"}}><div style={{height:"100%",width:`${score}%`,background:color,borderRadius:3,transition:"width 0.6s ease"}}/></div></div>);
 }
 
-function WelcomeScreen({onStart}){
+function WelcomeScreen({onStart,onClose}){
   return(<div style={{fontFamily:"'Open Sans', sans-serif",background:NAVY,minHeight:"100vh",width:"100%",display:"flex",flexDirection:"column"}}>
     <div style={{background:NAVY,borderBottom:`3px solid ${YELLOW}`,padding:"16px 24px"}}><div style={{maxWidth:700,margin:"0 auto",display:"flex",alignItems:"center",gap:14}}><img src="/getsafe-logo.png" alt="Get SAFE" style={{width:44,height:44,objectFit:"contain"}}/><div><div style={{fontSize:9,letterSpacing:3,color:YELLOW,textTransform:"uppercase",fontFamily:"'Poppins', sans-serif"}}>Get SAFE · Academy of Life Planning</div><h1 style={{margin:0,fontFamily:"'Poppins', sans-serif",fontSize:24,fontWeight:800,color:WHITE}}>GOLIATHON</h1></div></div></div>
     <div style={{flex:1,display:"flex",alignItems:"center",justifyContent:"center",padding:"40px 24px"}}>
@@ -367,13 +367,17 @@ function WelcomeScreen({onStart}){
             ))}
           </div>
         </div>
-        <div style={{textAlign:"center"}}><Btn onClick={onStart} fullWidth>Start Building My Case →</Btn><p style={{margin:"12px 0 0",fontSize:11,color:"#5a7a96"}}>Free · No account required · Educational use only · Not legal advice</p></div>
+        <div style={{textAlign:"center"}}>
+          <Btn onClick={onStart} fullWidth>Start Building My Case →</Btn>
+          {onClose&&<button onClick={onClose} style={{marginTop:12,background:"none",border:"none",color:"#7a96b0",fontSize:12,cursor:"pointer",fontFamily:"'Open Sans', sans-serif"}}>← Back to my dossier</button>}
+          <p style={{margin:"12px 0 0",fontSize:11,color:"#5a7a96"}}>Free · No account required · Educational use only · Not legal advice</p>
+        </div>
       </div>
     </div>
   </div>);
 }
 
-function CaseSwitcher({cases,activeId,onSwitch,onNew,onDelete}){
+function CaseSwitcher({cases,activeId,onSwitch,onNew,onDelete,onClearAll}){
   const [open,setOpen]=useState(false);
   const active=cases.find(c=>c.id===activeId);
   return(<div style={{position:"relative"}}>
@@ -385,7 +389,10 @@ function CaseSwitcher({cases,activeId,onSwitch,onNew,onDelete}){
         <button onClick={()=>{onSwitch(c.id);setOpen(false);}} style={{flex:1,background:"none",border:"none",color:c.id===activeId?YELLOW:LIGHT,fontSize:13,cursor:"pointer",textAlign:"left",fontFamily:"'Open Sans', sans-serif",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{c.title||"Untitled Case"}</button>
         {cases.length>1&&<button onClick={()=>{onDelete(c.id);setOpen(false);}} style={{background:"none",border:"none",color:"#e57373",fontSize:13,cursor:"pointer",padding:"0 4px",flexShrink:0}} title="Delete">✕</button>}
       </div>))}
-      <div style={{borderTop:`1px solid ${BORDER}`,marginTop:8,paddingTop:8}}><button onClick={()=>{onNew();setOpen(false);}} style={{width:"100%",background:YELLOW+"20",border:`1px solid ${YELLOW}40`,borderRadius:6,padding:"8px 10px",color:YELLOW,fontSize:12,cursor:"pointer",fontFamily:"'Poppins', sans-serif",fontWeight:700}}>+ New Case</button></div>
+      <div style={{borderTop:`1px solid ${BORDER}`,marginTop:8,paddingTop:8,display:"flex",gap:6}}>
+        <button onClick={()=>{onNew();setOpen(false);}} style={{flex:1,background:YELLOW+"20",border:`1px solid ${YELLOW}40`,borderRadius:6,padding:"8px 10px",color:YELLOW,fontSize:12,cursor:"pointer",fontFamily:"'Poppins', sans-serif",fontWeight:700}}>+ New Case</button>
+        <button onClick={()=>{if(window.confirm("Clear all case history and start fresh?"))onClearAll();setOpen(false);}} style={{background:"#c0392b20",border:"1px solid #e5737340",borderRadius:6,padding:"8px 10px",color:"#e57373",fontSize:11,cursor:"pointer",fontFamily:"'Poppins', sans-serif",fontWeight:700}}>Clear All</button>
+      </div>
     </div>)}
   </div>);
 }
@@ -531,6 +538,12 @@ export default function GoliathonApp(){
 
   const handleSwitchCase=useCallback((id)=>{setActiveId(id);isSavedRef.current=false;setSaved(false);},[setActiveId]);
 
+  const handleClearAll=useCallback(()=>{
+    const c={id:genId(),title:"My Case",dossier:null,shareId:genId()};
+    setCases([c]);saveCases([c]);setActiveId(c.id);
+    isSavedRef.current=false;setSaved(false);
+  },[setActiveId]);
+
   const handleDeleteCase=useCallback((id)=>{
     if(!window.confirm("Delete this case? This cannot be undone."))return;
     const updated=cases.filter(c=>c.id!==id);
@@ -554,11 +567,10 @@ export default function GoliathonApp(){
 
   const handleReset=useCallback(()=>{
     if(!window.confirm("Reset this case? All dossier content will be cleared."))return;
-    const newCaseId=genId();
-    const freshCase={id:newCaseId,title:"My Case",dossier:null,shareId:genId()};
+    const freshCase={id:genId(),title:"My Case",dossier:null,shareId:genId()};
     const updated=cases.map(c=>c.id===activeId?freshCase:c);
     updateCases(updated);
-    setActiveId(newCaseId);
+    setActiveId(freshCase.id);
     isSavedRef.current=false;
     setSaved(false);
   },[cases,activeId,updateCases,setActiveId]);
@@ -669,7 +681,7 @@ export default function GoliathonApp(){
 
   if(showPrivacy)return<PrivacyPage onBack={()=>{setShowPrivacy(false);window.history.pushState({},"","/");}}/>;
   if(readOnly){if(!readOnlyDossier)return<div style={{background:NAVY,minHeight:"100vh",display:"flex",alignItems:"center",justifyContent:"center"}}><div style={{textAlign:"center",color:LIGHT}}><Spinner/><p style={{marginTop:16,color:"#7a96b0"}}>Loading dossier…</p></div></div>;return<ReadOnlyDossier dossier={readOnlyDossier}/>;}
-  if(showWelcome)return<WelcomeScreen onStart={()=>{markWelcomed();setShowWelcome(false);}}/>;
+  if(showWelcome)return<WelcomeScreen onStart={()=>{markWelcomed();setShowWelcome(false);}} onClose={hasBeenWelcomed()?()=>setShowWelcome(false):null}/>;
 
   const evidenceCount=dossier?.evidence?.length||0;
 
@@ -682,7 +694,7 @@ export default function GoliathonApp(){
             <div style={{fontSize:9,letterSpacing:3,color:YELLOW,textTransform:"uppercase",fontFamily:"'Poppins', sans-serif"}}>Get SAFE · Academy of Life Planning</div>
             <h1 style={{margin:0,fontFamily:"'Poppins', sans-serif",fontSize:22,fontWeight:800,color:WHITE}}>GOLIATHON</h1>
           </div>
-          <CaseSwitcher cases={cases} activeId={activeId} onSwitch={handleSwitchCase} onNew={handleNewCase} onDelete={handleDeleteCase}/>
+          <CaseSwitcher cases={cases} activeId={activeId} onSwitch={handleSwitchCase} onNew={handleNewCase} onDelete={handleDeleteCase} onClearAll={handleClearAll}/>
         </div>
         <div style={{display:"flex",gap:6,marginBottom:10,flexWrap:"wrap",alignItems:"center"}}>
           {saved&&<Tag color="#7e9e82">✓ Saved</Tag>}
@@ -783,6 +795,9 @@ export default function GoliathonApp(){
     </div>
 
     <div style={{borderTop:`1px solid ${BORDER}`,padding:"14px 20px",textAlign:"center",marginTop:20}}>
+      <div style={{marginBottom:10}}>
+        <button onClick={()=>setShowWelcome(true)} style={{background:"none",border:`1px solid ${BORDER}`,borderRadius:6,padding:"6px 16px",color:"#7a96b0",fontSize:12,cursor:"pointer",fontFamily:"'Poppins', sans-serif"}}>ℹ About Goliathon</button>
+      </div>
       <p style={{margin:0,fontSize:11,color:"#5a7a96"}}>Goliathon · Get SAFE (Support After Financial Exploitation) · Founded by Steve Conley · Academy of Life Planning · <a href="https://www.get-safe.org.uk/" style={{color:"#7a96b0"}}>www.get-safe.org.uk</a> · <a href="/privacy" onClick={e=>{e.preventDefault();setShowPrivacy(true);window.history.pushState({},"","/privacy");}} style={{color:"#7a96b0"}}>Privacy Policy</a> · Educational use only. Not legal, financial, or mental-health advice.</p>
     </div>
 

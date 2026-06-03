@@ -118,7 +118,7 @@ function pdfAddFooter(doc,pageNum,totalPages){
   doc.text(`Page ${pageNum} of ${totalPages}`,W-margin,y+1,{align:"right"});
 }
 
-function pdfWrappedText(doc,text,x,y,maxWidth,fontSize,bold=false,color=[229,240,244]){
+function pdfWrappedText(doc,text,x,y,maxWidth,fontSize,bold=false,color=[30,50,80]){
   doc.setFontSize(fontSize);
   doc.setFont("helvetica",bold?"bold":"normal");
   doc.setTextColor(...color);
@@ -210,10 +210,10 @@ async function downloadPdf(sectionKey,dossier){
     }
 
     if(item.type==="body"){
-      const {lines,lineHeight}=pdfWrappedText(doc,item.text,margin,y,contentWidth,9,false,[200,220,235]);
+      const {lines,lineHeight}=pdfWrappedText(doc,item.text,margin,y,contentWidth,9,false,[30,50,80]);
       for(const line of lines){
         y=checkNewPage(doc,y,lineHeight*1.5,logoB64,caseTitle,sec.title,pageNums);
-        doc.setFontSize(9);doc.setFont("helvetica","normal");doc.setTextColor(200,220,235);
+        doc.setFontSize(9);doc.setFont("helvetica","normal");doc.setTextColor(30,50,80);
         doc.text(line,margin,y);
         y+=lineHeight*1.4;
       }
@@ -235,7 +235,7 @@ async function downloadPdf(sectionKey,dossier){
       doc.setTextColor(255,199,44);doc.setFontSize(8);doc.setFont("helvetica","bold");
       doc.text(item.date,margin+10,y+2.5);
       // Event
-      doc.setTextColor(200,220,235);doc.setFontSize(8.5);doc.setFont("helvetica","normal");
+      doc.setTextColor(30,50,80);doc.setFontSize(8.5);doc.setFont("helvetica","normal");
       let ey=y+6.5;
       for(const line of eventLines){doc.text(line,margin+10,ey);ey+=4.2;}
       // Evidence ref
@@ -294,7 +294,7 @@ async function downloadPdf(sectionKey,dossier){
         cy+=6;
       }
       // Summary
-      doc.setTextColor(200,220,235);doc.setFontSize(8.5);doc.setFont("helvetica","normal");
+      doc.setTextColor(30,50,80);doc.setFontSize(8.5);doc.setFont("helvetica","normal");
       for(const line of summaryLines){doc.text(line,margin+6,cy);cy+=4;}
       // Red flags
       if(rfLines.length){

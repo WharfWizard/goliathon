@@ -147,8 +147,12 @@ function pdfWrappedText(doc,text,x,y,maxWidth,fontSize,bold=false,color=[30,50,8
 
 function clean(str){
   if(!str)return '';
-  // Strip &– truncation artefacts from API responses
-  return str.replace(/&[–—-]+.*$/,'').replace(/^&\s*/,'').trim();
+  // Strip & artefacts: leading "& " list delimiters and trailing "& –" truncations
+  return str
+    .replace(/^&\s+/,'')          // leading "& " (ampersand space)
+    .replace(/&[\s–—-]+.*$/,'')   // trailing "& –" or "& —" truncation
+    .replace(/^&$/,'')             // lone ampersand
+    .trim();
 }
 
 function pdfSection(doc,title,y,margin,contentWidth){
@@ -277,21 +281,25 @@ async function downloadPdf(sectionKey,dossier){
     }
 
     if(item.type==="evidence"){
-      // Calculate all text heights first
+      // ── Simulation pass: set font sizes FIRST so splitTextToSize measures correctly ──
+      const TOP_PAD=6, BOT_PAD=6, TITLE_LH=4.5, TAG_H=6, SUM_LH=4.5, RF_LH=4.5;
+      doc.setFontSize(9);doc.setFont("helvetica","bold");
       const titleLines=doc.splitTextToSize(`#${String(item.num).padStart(3,"0")}  ${item.title||""}`,contentWidth-8);
+      doc.setFontSize(8.5);doc.setFont("helvetica","normal");
       const summaryLines=doc.splitTextToSize(clean(item.summary),contentWidth-12);
+      doc.setFontSize(7.5);
       const rfLines=item.redFlags?doc.splitTextToSize("⚠  "+clean(item.redFlags),contentWidth-12):[];
-      const boxH=6+titleLines.length*4.5+3+(item.date||item.docType?6:0)+summaryLines.length*4.5+(rfLines.length?rfLines.length*4.5+1:0)+6;
+      const boxH=TOP_PAD+titleLines.length*TITLE_LH+3+(item.date||item.docType?TAG_H:0)+summaryLines.length*SUM_LH+(rfLines.length?rfLines.length*RF_LH+2:0)+BOT_PAD;
       y=checkNewPage(doc,y,boxH+3,logoB64,caseTitle,sec.title,pageNums);
       // Card background
       doc.setFillColor(0,30,61);
       doc.roundedRect(margin,y,contentWidth,boxH,2,2,"F");
       doc.setFillColor(255,199,44);
       doc.rect(margin,y,2,boxH,"F");
-      // Title
-      let cy=y+5;
+      // Title — cy starts at y+TOP_PAD to match simulation
+      let cy=y+TOP_PAD;
       doc.setTextColor(255,255,255);doc.setFontSize(9);doc.setFont("helvetica","bold");
-      for(const line of titleLines){doc.text(line,margin+6,cy);cy+=4.5;}
+      for(const line of titleLines){doc.text(line,margin+6,cy);cy+=TITLE_LH;}
       // Tags
       if(item.date||item.docType){
         if(item.date){
@@ -315,15 +323,15 @@ async function downloadPdf(sectionKey,dossier){
           doc.setTextColor(122,150,176);doc.setFontSize(7);doc.setFont("helvetica","bold");
           doc.text(item.docType,margin+8,cy+1.2);
         }
-        cy+=6;
+        cy+=TAG_H;
       }
       // Summary
       doc.setTextColor(200,218,230);doc.setFontSize(8.5);doc.setFont("helvetica","normal");
-      for(const line of summaryLines){doc.text(line,margin+6,cy);cy+=4.5;}
+      for(const line of summaryLines){doc.text(line,margin+6,cy);cy+=SUM_LH;}
       // Red flags
       if(rfLines.length){
         doc.setTextColor(229,115,115);doc.setFontSize(7.5);
-        for(const line of rfLines){doc.text(line,margin+6,cy);cy+=4.5;}
+        for(const line of rfLines){doc.text(line,margin+6,cy);cy+=RF_LH;}
       }
       y+=boxH+4;
       continue;

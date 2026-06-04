@@ -298,7 +298,7 @@ async function downloadPdf(sectionKey,dossier){
         if(cur)lines.push(cur);
         return lines.length?lines:[''];
       }
-      const TOP_PAD=7, BOT_PAD=8;
+      const TOP_PAD=6, BOT_PAD=5;
       const titleLines=wrapText(`#${String(item.num).padStart(3,"0")}  ${item.title||""}`,contentWidth-10,9);
       const summaryLines=wrapText(clean(item.summary),contentWidth-18,8.5);
       const rfText=item.redFlags?("[!] "+clean(item.redFlags)):"";

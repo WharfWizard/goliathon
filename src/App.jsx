@@ -147,12 +147,13 @@ function pdfWrappedText(doc,text,x,y,maxWidth,fontSize,bold=false,color=[30,50,8
 
 function clean(str){
   if(!str)return '';
-  // Strip & artefacts: leading "& " list delimiters and trailing "& –" truncations
   return str
-    .replace(/^&\s+/,'')          // leading "& " (ampersand space)
-    .replace(/&[\s–—-]+.*$/,'')   // trailing "& –" or "& —" truncation
-    .replace(/^&$/,'')             // lone ampersand
-    .trim();
+    .replace(/^&\s*/,'')           // strip leading & (with or without space)
+    .replace(/&.*$/,'')             // strip anything from & onwards (mid-string artefact)
+    .replace(/;\s*'[^']*$/,'')     // strip trailing incomplete quoted token e.g. ; 'court repossess
+    .replace(/;\s*"[^"]*$/,'')     // same for double quotes
+    .trim()
+    .replace(/;\s*$/,'');          // strip trailing semicolon left behind
 }
 
 function pdfSection(doc,title,y,margin,contentWidth){
@@ -288,9 +289,9 @@ async function downloadPdf(sectionKey,dossier){
       doc.setFontSize(9);doc.setFont("helvetica","bold");
       const titleLines=doc.splitTextToSize(`#${String(item.num).padStart(3,"0")}  ${item.title||""}`,contentWidth-10);
       doc.setFontSize(8.5);doc.setFont("helvetica","normal");
-      const summaryLines=doc.splitTextToSize(clean(item.summary),contentWidth-14);
+      const summaryLines=doc.splitTextToSize(clean(item.summary),contentWidth-18);
       doc.setFontSize(7.5);doc.setFont("helvetica","normal");
-      const rfLines=item.redFlags?doc.splitTextToSize("⚠  "+clean(item.redFlags),contentWidth-14):[];
+      const rfLines=item.redFlags?doc.splitTextToSize("⚠  "+clean(item.redFlags),contentWidth-18):[];
       // Simulate cy to get real total height
       let simCy=TOP_PAD;
       for(let i=0;i<titleLines.length;i++) simCy+=5;
@@ -645,7 +646,7 @@ export default function GoliathonApp(){
       const nextStepsText=typeof dossier?.next_steps==="string"?dossier.next_steps:Array.isArray(dossier?.next_steps)?dossier.next_steps.join("\n"):"";
       const existing=dossier?`\n\nExisting case:\nTitle: ${dossier.case_title||"Unknown"}\nOverview: ${(dossier.overview||"").substring(0,600)}\nTimeline: ${(dossier.timeline||[]).map(t=>`[${t.date}] ${t.event}`).join("; ").substring(0,400)}\nStatement: ${(dossier.witness_statement||"").substring(0,400)}\nEvidence filed (${(dossier.evidence||[]).length}): ${(dossier.evidence||[]).map(e=>e.title).join(", ")}\nNext steps: ${nextStepsText.substring(0,200)}`:"\n\nThis is the FIRST piece of evidence — establish the case title, parties, and initial overview.";
       setProcessingMsg("Analysing evidence…");
-      const prompt=`${existing}\n\nAnalyse this evidence and return ONLY valid JSON with no preamble or markdown:\n{"case_title":"short case title","evidence_item":{"title":"descriptive title","date":"DD Mon YYYY or null","type":"Letter/Email/Statement/Report/Photo/Web Page/Other","summary":"2-3 sentence summary of significance","red_flags":"concerning phrases or null"},"timeline_entry":{"date":"DD Mon YYYY or null","event":"one sentence","evidence":"reference to this document"},"overview_update":"updated 3-4 sentence case overview","witness_update":"one or two new sentences in first person only","next_steps_update":"updated numbered list of 3-5 priority actions"}`;
+      const prompt=`${existing}\n\nAnalyse this evidence and return ONLY valid JSON with no preamble or markdown:\n{"case_title":"short case title","evidence_item":{"title":"descriptive title","date":"DD Mon YYYY or null","type":"Letter/Email/Statement/Report/Photo/Web Page/Other","summary":"2-3 sentence summary of significance","red_flags":"one plain sentence summarising the most serious concern, or null"},"timeline_entry":{"date":"DD Mon YYYY or null","event":"one sentence","evidence":"reference to this document"},"overview_update":"updated 3-4 sentence case overview","witness_update":"one or two new sentences in first person only","next_steps_update":"updated numbered list of 3-5 priority actions"}`;
       const response=await callClaude([{...userMessage,content:typeof userMessage.content==="string"?userMessage.content+prompt:[...(Array.isArray(userMessage.content)?userMessage.content:[userMessage.content]),{type:"text",text:prompt}]}]);
       let parsed;try{parsed=JSON.parse(response.replace(/```json|```/g,"").trim());}catch{throw new Error("Could not parse AI response");}
       setProcessingMsg("Updating dossier…");
@@ -693,7 +694,7 @@ export default function GoliathonApp(){
       const imageContent=cameraPages.map(p=>({type:"image",source:{type:"base64",media_type:"image/jpeg",data:p.data}}));
       imageContent.push({type:"text",text:"These are photographed pages of a physical document."});
       const existing=dossier?`\n\nExisting case:\nTitle: ${dossier.case_title}\nOverview: ${(dossier.overview||"").substring(0,400)}\nEvidence filed: ${(dossier.evidence||[]).length} items`:"\n\nThis is the FIRST piece of evidence.";
-      const prompt=`${existing}\n\nAnalyse this photographed document (${cameraPages.length} pages) and return ONLY valid JSON:\n{"case_title":"short title","evidence_item":{"title":"title","date":"DD Mon YYYY or null","type":"Letter/Court Document/Medical/Financial/Other","summary":"2-3 sentence summary","red_flags":"concerns or null"},"timeline_entry":{"date":"DD Mon YYYY or null","event":"one sentence","evidence":"reference"},"overview_update":"updated overview","witness_update":"new sentences only","next_steps_update":"numbered 3-5 actions"}`;
+      const prompt=`${existing}\n\nAnalyse this photographed document (${cameraPages.length} pages) and return ONLY valid JSON:\n{"case_title":"short title","evidence_item":{"title":"title","date":"DD Mon YYYY or null","type":"Letter/Court Document/Medical/Financial/Other","summary":"2-3 sentence summary","red_flags":"one plain sentence summarising the most serious concern, or null"},"timeline_entry":{"date":"DD Mon YYYY or null","event":"one sentence","evidence":"reference"},"overview_update":"updated overview","witness_update":"new sentences only","next_steps_update":"numbered 3-5 actions"}`;
       const res=await fetch("/api/claude",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({model:"claude-sonnet-4-20250514",max_tokens:4000,system:SYSTEM,messages:[{role:"user",content:[...imageContent,{type:"text",text:prompt}]}]})});
       const data=await res.json();const response=data.content?.[0]?.text||"";
       let parsed;try{parsed=JSON.parse(response.replace(/```json|```/g,"").trim());}catch{throw new Error("Could not parse AI response");}

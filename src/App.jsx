@@ -286,7 +286,7 @@ async function downloadPdf(sectionKey,dossier){
       // Wraps text by character-count estimate: ~0.45mm per char at fontSize pt
       function wrapText(text,maxW,fontSize){
         if(!text)return[];
-        const charsPerLine=Math.floor(maxW/(fontSize*0.25));
+        const charsPerLine=Math.floor(maxW/(fontSize*0.23));
         const words=text.split(' ');
         const lines=[];
         let cur='';

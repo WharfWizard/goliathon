@@ -144,6 +144,13 @@ function pdfWrappedText(doc,text,x,y,maxWidth,fontSize,bold=false,color=[30,50,8
   return{lines,height:lines.length*lineHeight,lineHeight};
 }
 
+
+function clean(str){
+  if(!str)return '';
+  // Strip &– truncation artefacts from API responses
+  return str.replace(/&[–—-]+.*$/,'').replace(/^&\s*/,'').trim();
+}
+
 function pdfSection(doc,title,y,margin,contentWidth){
   // Section header with yellow left border
   doc.setFillColor(255,199,44);
@@ -272,9 +279,9 @@ async function downloadPdf(sectionKey,dossier){
     if(item.type==="evidence"){
       // Calculate all text heights first
       const titleLines=doc.splitTextToSize(`#${String(item.num).padStart(3,"0")}  ${item.title||""}`,contentWidth-8);
-      const summaryLines=doc.splitTextToSize(item.summary||"",contentWidth-12);
-      const rfLines=item.redFlags?doc.splitTextToSize("⚠  "+item.redFlags,contentWidth-12):[];
-      const boxH=4+titleLines.length*4.5+3+(item.date||item.docType?5:0)+summaryLines.length*4+rfLines.length*4+4;
+      const summaryLines=doc.splitTextToSize(clean(item.summary),contentWidth-12);
+      const rfLines=item.redFlags?doc.splitTextToSize("⚠  "+clean(item.redFlags),contentWidth-12):[];
+      const boxH=6+titleLines.length*4.5+3+(item.date||item.docType?6:0)+summaryLines.length*4.5+(rfLines.length?rfLines.length*4.5+1:0)+6;
       y=checkNewPage(doc,y,boxH+3,logoB64,caseTitle,sec.title,pageNums);
       // Card background
       doc.setFillColor(0,30,61);
@@ -311,12 +318,12 @@ async function downloadPdf(sectionKey,dossier){
         cy+=6;
       }
       // Summary
-      doc.setTextColor(30,50,80);doc.setFontSize(8.5);doc.setFont("helvetica","normal");
-      for(const line of summaryLines){doc.text(line,margin+6,cy);cy+=4;}
+      doc.setTextColor(200,218,230);doc.setFontSize(8.5);doc.setFont("helvetica","normal");
+      for(const line of summaryLines){doc.text(line,margin+6,cy);cy+=4.5;}
       // Red flags
       if(rfLines.length){
         doc.setTextColor(229,115,115);doc.setFontSize(7.5);
-        for(const line of rfLines){doc.text(line,margin+6,cy);cy+=4;}
+        for(const line of rfLines){doc.text(line,margin+6,cy);cy+=4.5;}
       }
       y+=boxH+4;
       continue;

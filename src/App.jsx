@@ -282,39 +282,47 @@ async function downloadPdf(sectionKey,dossier){
     }
 
     if(item.type==="evidence"){
-      // ── PASS 1: Dry-run to find real final height ──────────────────────────
-      // splitTextToSize accuracy depends on correct font being active first.
-      // We simulate cy advancement identically to the render pass below.
+      // ── Manual word-wrap helper — does NOT rely on jsPDF font metrics ──────
+      // Wraps text by character-count estimate: ~0.45mm per char at fontSize pt
+      function wrapText(text,maxW,fontSize){
+        if(!text)return[];
+        const charsPerLine=Math.floor(maxW/(fontSize*0.45));
+        const words=text.split(' ');
+        const lines=[];
+        let cur='';
+        for(const w of words){
+          if(!cur){cur=w;continue;}
+          if((cur+' '+w).length<=charsPerLine){cur+=' '+w;}
+          else{lines.push(cur);cur=w;}
+        }
+        if(cur)lines.push(cur);
+        return lines.length?lines:[''];
+      }
       const TOP_PAD=7, BOT_PAD=8;
-      doc.setFontSize(9);doc.setFont("helvetica","bold");
-      const titleLines=doc.splitTextToSize(`#${String(item.num).padStart(3,"0")}  ${item.title||""}`,contentWidth-10);
-      doc.setFontSize(8.5);doc.setFont("helvetica","normal");
-      const summaryLines=doc.splitTextToSize(clean(item.summary),contentWidth-18);
-      doc.setFontSize(7.5);doc.setFont("helvetica","normal");
-      const rfLines=item.redFlags?doc.splitTextToSize("⚠  "+clean(item.redFlags),contentWidth-18):[];
-      // Simulate cy to get real total height
+      const titleLines=wrapText(`#${String(item.num).padStart(3,"0")}  ${item.title||""}`,contentWidth-10,9);
+      const summaryLines=wrapText(clean(item.summary),contentWidth-18,8.5);
+      const rfText=item.redFlags?("⚠  "+clean(item.redFlags)):"";
+      const rfLines=rfText?wrapText(rfText,contentWidth-18,7.5):[];
+      // ── Simulate total height ─────────────────────────────────────────────
       let simCy=TOP_PAD;
-      for(let i=0;i<titleLines.length;i++) simCy+=5;
-      simCy+=3;
-      if(item.date||item.docType) simCy+=7;
-      for(let i=0;i<summaryLines.length;i++) simCy+=5;
-      if(rfLines.length){ simCy+=2; for(let i=0;i<rfLines.length;i++) simCy+=4.5; }
+      simCy+=titleLines.length*5+3;
+      if(item.date||item.docType)simCy+=7;
+      simCy+=summaryLines.length*5;
+      if(rfLines.length)simCy+=rfLines.length*4.5+2;
       simCy+=BOT_PAD;
       const boxH=simCy;
-      // ── Check page break BEFORE drawing anything ──────────────────────────
+      // ── Page break check ──────────────────────────────────────────────────
       y=checkNewPage(doc,y,boxH+4,logoB64,caseTitle,sec.title,pageNums);
-      // ── Draw card background ───────────────────────────────────────────────
+      // ── Draw card ─────────────────────────────────────────────────────────
       doc.setFillColor(0,30,61);
       doc.roundedRect(margin,y,contentWidth,boxH,2,2,"F");
       doc.setFillColor(255,199,44);
       doc.rect(margin,y,2,boxH,"F");
-      // ── PASS 2: Render — cy increments IDENTICAL to simulation above ───────
+      // ── Render ────────────────────────────────────────────────────────────
       let cy=y+TOP_PAD;
-      // Title
       doc.setTextColor(255,255,255);doc.setFontSize(9);doc.setFont("helvetica","bold");
       for(const line of titleLines){doc.text(line,margin+6,cy);cy+=5;}
       cy+=3;
-      // Tags
       if(item.date||item.docType){
         if(item.date){
           doc.setFillColor(255,199,44,0.2);doc.setDrawColor(255,199,44);doc.setLineWidth(0.3);
@@ -339,10 +347,8 @@ async function downloadPdf(sectionKey,dossier){
         }
         cy+=7;
       }
-      // Summary
       doc.setTextColor(200,218,230);doc.setFontSize(8.5);doc.setFont("helvetica","normal");
       for(const line of summaryLines){doc.text(line,margin+6,cy);cy+=5;}
-      // Red flags
       if(rfLines.length){
         cy+=2;
         doc.setTextColor(229,115,115);doc.setFontSize(7.5);doc.setFont("helvetica","normal");

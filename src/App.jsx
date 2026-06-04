@@ -281,57 +281,71 @@ async function downloadPdf(sectionKey,dossier){
     }
 
     if(item.type==="evidence"){
-      // ── Simulation pass: set font sizes FIRST so splitTextToSize measures correctly ──
-      const TOP_PAD=6, BOT_PAD=6, TITLE_LH=4.5, TAG_H=6, SUM_LH=4.5, RF_LH=4.5;
+      // ── PASS 1: Dry-run to find real final height ──────────────────────────
+      // splitTextToSize accuracy depends on correct font being active first.
+      // We simulate cy advancement identically to the render pass below.
+      const TOP_PAD=7, BOT_PAD=8;
       doc.setFontSize(9);doc.setFont("helvetica","bold");
-      const titleLines=doc.splitTextToSize(`#${String(item.num).padStart(3,"0")}  ${item.title||""}`,contentWidth-8);
+      const titleLines=doc.splitTextToSize(`#${String(item.num).padStart(3,"0")}  ${item.title||""}`,contentWidth-10);
       doc.setFontSize(8.5);doc.setFont("helvetica","normal");
-      const summaryLines=doc.splitTextToSize(clean(item.summary),contentWidth-12);
-      doc.setFontSize(7.5);
-      const rfLines=item.redFlags?doc.splitTextToSize("⚠  "+clean(item.redFlags),contentWidth-12):[];
-      const boxH=TOP_PAD+titleLines.length*TITLE_LH+3+(item.date||item.docType?TAG_H:0)+summaryLines.length*SUM_LH+(rfLines.length?rfLines.length*RF_LH+2:0)+BOT_PAD;
-      y=checkNewPage(doc,y,boxH+3,logoB64,caseTitle,sec.title,pageNums);
-      // Card background
+      const summaryLines=doc.splitTextToSize(clean(item.summary),contentWidth-14);
+      doc.setFontSize(7.5);doc.setFont("helvetica","normal");
+      const rfLines=item.redFlags?doc.splitTextToSize("⚠  "+clean(item.redFlags),contentWidth-14):[];
+      // Simulate cy to get real total height
+      let simCy=TOP_PAD;
+      for(let i=0;i<titleLines.length;i++) simCy+=5;
+      simCy+=3;
+      if(item.date||item.docType) simCy+=7;
+      for(let i=0;i<summaryLines.length;i++) simCy+=5;
+      if(rfLines.length){ simCy+=2; for(let i=0;i<rfLines.length;i++) simCy+=4.5; }
+      simCy+=BOT_PAD;
+      const boxH=simCy;
+      // ── Check page break BEFORE drawing anything ──────────────────────────
+      y=checkNewPage(doc,y,boxH+4,logoB64,caseTitle,sec.title,pageNums);
+      // ── Draw card background ───────────────────────────────────────────────
       doc.setFillColor(0,30,61);
       doc.roundedRect(margin,y,contentWidth,boxH,2,2,"F");
       doc.setFillColor(255,199,44);
       doc.rect(margin,y,2,boxH,"F");
-      // Title — cy starts at y+TOP_PAD to match simulation
+      // ── PASS 2: Render — cy increments IDENTICAL to simulation above ───────
       let cy=y+TOP_PAD;
+      // Title
       doc.setTextColor(255,255,255);doc.setFontSize(9);doc.setFont("helvetica","bold");
-      for(const line of titleLines){doc.text(line,margin+6,cy);cy+=TITLE_LH;}
+      for(const line of titleLines){doc.text(line,margin+6,cy);cy+=5;}
+      cy+=3;
       // Tags
       if(item.date||item.docType){
         if(item.date){
           doc.setFillColor(255,199,44,0.2);doc.setDrawColor(255,199,44);doc.setLineWidth(0.3);
           const tw=doc.getTextWidth(item.date)+4;
-          doc.roundedRect(margin+6,cy-2,tw,4.5,1,1,"S");
+          doc.roundedRect(margin+6,cy-2.5,tw,5,1,1,"S");
           doc.setTextColor(255,199,44);doc.setFontSize(7);doc.setFont("helvetica","bold");
           doc.text(item.date,margin+8,cy+1.2);
           const nextX=margin+6+tw+3;
           if(item.docType){
             const tw2=doc.getTextWidth(item.docType)+4;
             doc.setDrawColor(122,150,176);
-            doc.roundedRect(nextX,cy-2,tw2,4.5,1,1,"S");
+            doc.roundedRect(nextX,cy-2.5,tw2,5,1,1,"S");
             doc.setTextColor(122,150,176);
             doc.text(item.docType,nextX+2,cy+1.2);
           }
         } else if(item.docType){
           const tw2=doc.getTextWidth(item.docType)+4;
           doc.setDrawColor(122,150,176);doc.setLineWidth(0.3);
-          doc.roundedRect(margin+6,cy-2,tw2,4.5,1,1,"S");
+          doc.roundedRect(margin+6,cy-2.5,tw2,5,1,1,"S");
           doc.setTextColor(122,150,176);doc.setFontSize(7);doc.setFont("helvetica","bold");
           doc.text(item.docType,margin+8,cy+1.2);
         }
-        cy+=TAG_H;
+        cy+=7;
       }
       // Summary
       doc.setTextColor(200,218,230);doc.setFontSize(8.5);doc.setFont("helvetica","normal");
-      for(const line of summaryLines){doc.text(line,margin+6,cy);cy+=SUM_LH;}
+      for(const line of summaryLines){doc.text(line,margin+6,cy);cy+=5;}
       // Red flags
       if(rfLines.length){
-        doc.setTextColor(229,115,115);doc.setFontSize(7.5);
-        for(const line of rfLines){doc.text(line,margin+6,cy);cy+=RF_LH;}
+        cy+=2;
+        doc.setTextColor(229,115,115);doc.setFontSize(7.5);doc.setFont("helvetica","normal");
+        for(const line of rfLines){doc.text(line,margin+6,cy);cy+=4.5;}
       }
       y+=boxH+4;
       continue;

@@ -548,7 +548,6 @@ export default function GoliathonApp(){
   const shareId=activeCase?.shareId||genId();
   const [processing,setProcessing]=useState(false);
   const [processingMsg,setProcessingMsg]=useState("");
-  const [dragOver,setDragOver]=useState(false);
   const [urlInput,setUrlInput]=useState("");
   const [showUrl,setShowUrl]=useState(false);
   const [showPasteText,setShowPasteText]=useState(false);

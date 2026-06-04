@@ -551,6 +551,11 @@ export default function GoliathonApp(){
   const [dragOver,setDragOver]=useState(false);
   const [urlInput,setUrlInput]=useState("");
   const [showUrl,setShowUrl]=useState(false);
+  const [showPasteText,setShowPasteText]=useState(false);
+  const [pasteTextContent,setPasteTextContent]=useState("");
+  const [pasteTextDate,setPasteTextDate]=useState("");
+  const [pasteTextTitle,setPasteTextTitle]=useState("");
+  const [dragOver,setDragOver]=useState(false);
   const [showShare,setShowShare]=useState(false);
   const [showDownload,setShowDownload]=useState(false);
   const [showCamera,setShowCamera]=useState(false);
@@ -654,6 +659,15 @@ export default function GoliathonApp(){
     const updated=cases.map(c=>c.id===activeId?{...c,title:titleDraft,dossier:c.dossier?{...c.dossier,case_title:titleDraft}:c.dossier}:c);
     updateCases(updated);if(dossier)updateDossier({...dossier,case_title:titleDraft});setEditingTitle(false);
   },[titleDraft,cases,activeId,dossier,updateCases,updateDossier]);
+
+  const handlePasteText=useCallback(async()=>{
+    if(!pasteTextContent.trim())return;
+    const datePrefix=pasteTextDate?pasteTextDate+"_":"";
+    const titlePart=pasteTextTitle.trim()||"File Note";
+    const filename=datePrefix+titlePart;
+    setShowPasteText(false);setPasteTextContent("");setPasteTextDate("");setPasteTextTitle("");
+    await processEvidence(pasteTextContent.trim(),filename,"text/plain");
+  },[pasteTextContent,pasteTextDate,pasteTextTitle]);
 
   const processEvidence=useCallback(async(content,filename,mediaType,isUrl=false)=>{
     setProcessing(true);setProcessingMsg(`Reading ${filename}…`);
@@ -789,13 +803,38 @@ export default function GoliathonApp(){
               <Btn small>📎 Upload File</Btn>
               <Btn small variant="subtle" onClick={e=>{e.stopPropagation();setShowCamera(true);setCameraPages([]);}}>📷 Camera Scan</Btn>
               <Btn small variant="subtle" onClick={e=>{e.stopPropagation();setShowUrl(true);}}>🔗 Add URL</Btn>
+              <Btn small variant="subtle" onClick={e=>{e.stopPropagation();setShowPasteText(true);}}>📝 Paste Text</Btn>
             </div>
-            <p style={{margin:"10px 0 0",fontSize:11,color:"#5a7a96"}}>Accepts JPG, PNG, PDF, TXT, HTML, DOC, DOCX, MSG, or camera scan</p>
+            <p style={{margin:"10px 0 0",fontSize:11,color:"#5a7a96"}}>Accepts JPG, PNG, PDF, TXT, HTML, DOC, DOCX, MSG — or drag and drop a file here</p>
           </div>
         )}
       </div>
       <input ref={fileRef} type="file" accept="image/*,.pdf,.txt,.html,.htm,.doc,.docx,.msg" style={{display:"none"}} onChange={e=>handleFile(e.target.files[0])}/>
       <input ref={cameraRef} type="file" accept="image/*" capture="environment" multiple style={{display:"none"}} onChange={handleCameraCapture}/>
+
+      {showPasteText&&(
+        <div style={{position:"fixed",inset:0,background:"rgba(0,20,40,0.85)",zIndex:200,display:"flex",alignItems:"center",justifyContent:"center",padding:20}} onClick={()=>setShowPasteText(false)}>
+          <div style={{background:"#0d2137",border:"1px solid #1e3a5f",borderRadius:16,padding:24,width:"100%",maxWidth:560}} onClick={e=>e.stopPropagation()}>
+            <h3 style={{margin:"0 0 16px",color:"#ffc72c",fontFamily:"'Poppins',sans-serif",fontSize:16}}>📝 Paste Text Entry</h3>
+            <p style={{margin:"0 0 14px",fontSize:12,color:"#7a96b0",lineHeight:1.6}}>Paste a file note, letter, email, or any written record. Give it a date and title so it appears correctly in your evidence register.</p>
+            <div style={{display:"flex",gap:10,marginBottom:10}}>
+              <div style={{flex:1}}>
+                <label style={{display:"block",fontSize:11,color:"#7a96b0",marginBottom:4,textTransform:"uppercase",letterSpacing:"0.05em"}}>Date (e.g. 2026_06_03)</label>
+                <input value={pasteTextDate} onChange={e=>setPasteTextDate(e.target.value)} placeholder="YYYY_MM_DD" style={{width:"100%",boxSizing:"border-box",background:"#0a1929",border:"1px solid #1e3a5f",borderRadius:8,padding:"8px 10px",color:"#c8dae6",fontSize:13,fontFamily:"monospace"}}/>
+              </div>
+              <div style={{flex:2}}>
+                <label style={{display:"block",fontSize:11,color:"#7a96b0",marginBottom:4,textTransform:"uppercase",letterSpacing:"0.05em"}}>Title / Description</label>
+                <input value={pasteTextTitle} onChange={e=>setPasteTextTitle(e.target.value)} placeholder="e.g. File Note: mortgage discharge" style={{width:"100%",boxSizing:"border-box",background:"#0a1929",border:"1px solid #1e3a5f",borderRadius:8,padding:"8px 10px",color:"#c8dae6",fontSize:13}}/>
+              </div>
+            </div>
+            <textarea value={pasteTextContent} onChange={e=>setPasteTextContent(e.target.value)} placeholder="Paste or type your text here…" rows={10} style={{width:"100%",boxSizing:"border-box",background:"#0a1929",border:"1px solid #1e3a5f",borderRadius:8,padding:"10px",color:"#c8dae6",fontSize:13,lineHeight:1.7,resize:"vertical",fontFamily:"inherit",marginBottom:14}}/>
+            <div style={{display:"flex",gap:8,justifyContent:"flex-end"}}>
+              <Btn small variant="subtle" onClick={()=>setShowPasteText(false)}>Cancel</Btn>
+              <Btn small onClick={handlePasteText} disabled={!pasteTextContent.trim()}>Analyse Entry</Btn>
+            </div>
+          </div>
+        </div>
+      )}
 
       {showUrl&&(
         <div style={{background:PANEL,border:`1px solid ${BORDER}`,borderRadius:12,padding:16,marginBottom:18}}>

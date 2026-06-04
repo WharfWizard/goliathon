@@ -286,7 +286,7 @@ async function downloadPdf(sectionKey,dossier){
       // Wraps text by character-count estimate: ~0.45mm per char at fontSize pt
       function wrapText(text,maxW,fontSize){
         if(!text)return[];
-        const charsPerLine=Math.floor(maxW/(fontSize*0.21));
+        const charsPerLine=Math.floor(maxW/(fontSize*0.33));
         const words=text.split(' ');
         const lines=[];
         let cur='';
@@ -301,7 +301,7 @@ async function downloadPdf(sectionKey,dossier){
       const TOP_PAD=7, BOT_PAD=8;
       const titleLines=wrapText(`#${String(item.num).padStart(3,"0")}  ${item.title||""}`,contentWidth-10,9);
       const summaryLines=wrapText(clean(item.summary),contentWidth-18,8.5);
-      const rfText=item.redFlags?("⚠  "+clean(item.redFlags)):"";
+      const rfText=item.redFlags?("[!] "+clean(item.redFlags)):"";
       const rfLines=rfText?wrapText(rfText,contentWidth-18,7.5):[];
       // ── Simulate total height ─────────────────────────────────────────────
       let simCy=TOP_PAD;
@@ -491,7 +491,7 @@ function ReadOnlyDossier({dossier}){
       <Panel title="Case Overview" icon="📋">{dossier.overview?<p style={{margin:0,fontSize:14,lineHeight:1.8,color:LIGHT}}>{dossier.overview}</p>:<EmptyState text="No overview yet."/>}</Panel>
       <Panel title="Timeline" icon="📅">{!(dossier.timeline||[]).length?<EmptyState text="No timeline yet."/>:(dossier.timeline||[]).map((t,i)=>(<div key={i} style={{display:"flex",gap:12,marginBottom:12,paddingBottom:12,borderBottom:i<dossier.timeline.length-1?`1px solid ${BORDER}`:"none"}}><div style={{width:26,height:26,background:YELLOW,borderRadius:"50%",display:"flex",alignItems:"center",justifyContent:"center",fontFamily:"'Poppins', sans-serif",fontWeight:700,fontSize:11,color:NAVY,flexShrink:0}}>{i+1}</div><div><div style={{fontSize:11,color:YELLOW,fontWeight:600,marginBottom:2}}>{t.date||"Date unknown"}</div><div style={{fontSize:13,color:LIGHT,lineHeight:1.6}}>{t.event}</div></div></div>))}</Panel>
       <Panel title="Witness Statement" icon="📝">{dossier.witness_statement?<p style={{margin:0,fontSize:14,lineHeight:1.9,color:LIGHT,whiteSpace:"pre-wrap"}}>{dossier.witness_statement}</p>:<EmptyState text="No statement yet."/>}</Panel>
-      <Panel title={`Evidence Library — ${(dossier.evidence||[]).length} items`} icon="🗂️">{!(dossier.evidence||[]).length?<EmptyState text="No evidence yet."/>:(dossier.evidence||[]).map((e,i)=>(<div key={i} style={{background:"#001e3d",border:`1px solid ${BORDER}`,borderRadius:10,padding:13,marginBottom:9}}><div style={{display:"flex",alignItems:"center",gap:7,marginBottom:6,flexWrap:"wrap"}}><span style={{fontFamily:"'Poppins', sans-serif",fontWeight:700,fontSize:11,color:YELLOW}}>#{String(i+1).padStart(3,"0")}</span><span style={{fontFamily:"'Poppins', sans-serif",fontWeight:700,fontSize:13,color:WHITE,flex:1}}>{e.title}</span>{e.date&&<Tag>{e.date}</Tag>}{e.type&&<Tag color="#7a96b0">{e.type}</Tag>}</div><p style={{margin:"0 0 4px",fontSize:12,color:LIGHT,lineHeight:1.6}}>{e.summary}</p>{e.red_flags&&<p style={{margin:0,fontSize:11,color:"#e57373"}}>⚠ {e.red_flags}</p>}</div>))}</Panel>
+      <Panel title={`Evidence Library — ${(dossier.evidence||[]).length} items`} icon="🗂️">{!(dossier.evidence||[]).length?<EmptyState text="No evidence yet."/>:(dossier.evidence||[]).map((e,i)=>(<div key={i} style={{background:"#001e3d",border:`1px solid ${BORDER}`,borderRadius:10,padding:13,marginBottom:9}}><div style={{display:"flex",alignItems:"center",gap:7,marginBottom:6,flexWrap:"wrap"}}><span style={{fontFamily:"'Poppins', sans-serif",fontWeight:700,fontSize:11,color:YELLOW}}>#{String(i+1).padStart(3,"0")}</span><span style={{fontFamily:"'Poppins', sans-serif",fontWeight:700,fontSize:13,color:WHITE,flex:1}}>{e.title}</span>{e.date&&<Tag>{e.date}</Tag>}{e.type&&<Tag color="#7a96b0">{e.type}</Tag>}</div><p style={{margin:"0 0 4px",fontSize:12,color:LIGHT,lineHeight:1.6}}>{e.summary}</p>{e.red_flags&&<p style={{margin:0,fontSize:11,color:"#e57373"}>[!] {e.red_flags}</p>}</div>))}</Panel>
       <Panel title="Next Steps" icon="📌">{dossier.next_steps?<p style={{margin:0,fontSize:14,lineHeight:1.8,color:LIGHT,whiteSpace:"pre-wrap"}}>{dossier.next_steps}</p>:<EmptyState text="No next steps yet."/>}</Panel>
     </div>
     {showDownload&&<DownloadModal dossier={dossier} onClose={()=>setShowDownload(false)}/>}
@@ -821,7 +821,7 @@ export default function GoliathonApp(){
                   </div>
                   <div style={{display:"flex",gap:5,flexWrap:"wrap",marginBottom:5}}>{e.date&&<Tag>{e.date}</Tag>}{e.type&&<Tag color="#7a96b0">{e.type}</Tag>}</div>
                   <p style={{margin:"0 0 4px",fontSize:12,color:LIGHT,lineHeight:1.6}}>{e.summary}</p>
-                  {e.red_flags&&<p style={{margin:0,fontSize:11,color:"#e57373"}}>⚠ {e.red_flags}</p>}
+                  {e.red_flags&&<p style={{margin:0,fontSize:11,color:"#e57373"}>[!] {e.red_flags}</p>}
                 </div>);
               })}
             </Panel>

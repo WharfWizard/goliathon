@@ -164,8 +164,10 @@ async function hashFile(content){
 
 function cleanNumbering(text){
   if(!text)return '';
-  // Strip duplicate numbering like "1. 1." or "2. 2." produced by array-to-string conversion
-  return text.replace(/^(\d+)\. \1\. /gm,'$1. ');
+  // Strip "1. 1." "2. 2." duplicate numbering (array join then manual prefix)
+  return text
+    .replace(/^(\d+)\.\s+\1\.\s+/gm,'$1. ')
+    .replace(/^(\d+)\.\s+(\d+)\.\s+(?=\D)/gm,(m,a,b)=>a===b?a+'. ':m);
 }
 
 function pdfSection(doc,title,y,margin,contentWidth){
@@ -254,7 +256,7 @@ async function downloadPdf(sectionKey,dossier){
       continue;
     }
 
-    if(item.type==="body"){
+    if(item.type==="body"){item={...item,text:cleanNumbering(item.text||'')};
       const {lines,lineHeight}=pdfWrappedText(doc,item.text,margin,y,contentWidth,9,false,[30,50,80]);
       for(const line of lines){
         y=checkNewPage(doc,y,lineHeight*1.5,logoB64,caseTitle,sec.title,pageNums);
@@ -758,7 +760,7 @@ export default function GoliathonApp(){
       const newTimeline=[...(current.timeline||[])];
       if(parsed.timeline_entry?.event){newTimeline.push(parsed.timeline_entry);newTimeline.sort((a,b)=>{if(!a.date)return 1;if(!b.date)return-1;return new Date(a.date)-new Date(b.date);});}
       const newWitness=current.witness_statement?current.witness_statement+"\n\n"+(parsed.witness_update||""):parsed.witness_update||"";
-      const newNextSteps=typeof parsed.next_steps_update==="string"?parsed.next_steps_update:Array.isArray(parsed.next_steps_update)?parsed.next_steps_update.map((s,i)=>`${i+1}. ${s}`).join("\n"):(typeof current.next_steps==="string"?current.next_steps:"");
+      const newNextSteps=cleanNumbering(typeof parsed.next_steps_update==="string"?parsed.next_steps_update:Array.isArray(parsed.next_steps_update)?parsed.next_steps_update.map((s,i)=>`${i+1}. ${s}`).join("\n"):(typeof current.next_steps==="string"?current.next_steps:""));
       await updateDossier({...current,case_title:parsed.case_title||current.case_title,overview:parsed.overview_update||current.overview,timeline:newTimeline,witness_statement:newWitness,next_steps:newNextSteps,evidence:newEvidence});
     }catch(e){alert("Something went wrong with the camera scan.\n\n"+e.message);}
     cameraPages.forEach(p=>URL.revokeObjectURL(p.preview));setCameraPages([]);setCameraProcessing(false);setProcessing(false);setProcessingMsg("");

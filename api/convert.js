@@ -1,5 +1,5 @@
 import mammoth from 'mammoth';
-import MsgReader from 'msgreader';
+import MsgReader from '@kenjiuno/msgreader';
 
 export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');

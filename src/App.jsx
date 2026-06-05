@@ -156,6 +156,12 @@ function clean(str){
     .replace(/;\s*$/,'');          // strip trailing semicolon left behind
 }
 
+async function hashFile(content){
+  const msgUint8=new TextEncoder().encode(typeof content==='string'?content:content.toString());
+  const hashBuffer=await crypto.subtle.digest('SHA-256',msgUint8);
+  return Array.from(new Uint8Array(hashBuffer)).map(b=>b.toString(16).padStart(2,'0')).join('');
+}
+
 function pdfSection(doc,title,y,margin,contentWidth){
   // Section header with yellow left border
   doc.setFillColor(255,199,44);
@@ -196,6 +202,7 @@ async function downloadPdf(sectionKey,dossier){
     evidence:{title:`Evidence Library — ${(dossier.evidence||[]).length} Items`,data:()=>(dossier.evidence||[]).map((e,i)=>({type:"evidence",num:i+1,title:e.title,date:e.date,docType:e.type,summary:e.summary,factsObserved:e.facts_observed,significance:e.significance,redFlags:e.red_flags}))},
     nextsteps:{title:"Next Steps",data:()=>[{type:"body",text:dossier.next_steps||"No next steps available."}]},
     keyquestions:{title:"Key Questions in This Case",data:()=>[{type:"body",text:dossier.key_questions||"No key questions identified yet."}]},
+    decisionsummary:{title:"Decision-Maker Summary",data:()=>[{type:"body",text:dossier.decision_summary||"Decision-Maker Summary not yet generated."}]},
     complete:{title:"Complete Evidence Dossier",data:()=>{
       const items=[];
       items.push({type:"sectionHeader",title:"Case Overview"});
@@ -208,6 +215,7 @@ async function downloadPdf(sectionKey,dossier){
       (dossier.evidence||[]).forEach((e,i)=>items.push({type:"evidence",num:i+1,title:e.title,date:e.date,docType:e.type,summary:e.summary,factsObserved:e.facts_observed,significance:e.significance,redFlags:e.red_flags}));
       items.push({type:"sectionHeader",title:"Next Steps"});
       items.push({type:"body",text:dossier.next_steps||""});
+      if(dossier.decision_summary){items.push({type:"sectionHeader",title:"Decision-Maker Summary"});items.push({type:"body",text:dossier.decision_summary});}
       if(dossier.key_questions){items.push({type:"sectionHeader",title:"Key Questions in This Case"});items.push({type:"body",text:dossier.key_questions});}
       return items;
     }},
@@ -482,7 +490,8 @@ function ShareModal({shareId,onClose}){
 function DownloadModal({dossier,onClose}){
   const opts=[
     {label:"Complete Dossier",desc:"All sections — full branded PDF",icon:"📁",action:()=>downloadPdf("complete",dossier)},
-    {label:"Case Overview",desc:"Summary and context",icon:"📋",action:()=>downloadPdf("overview",dossier)},
+    {label:"Decision-Maker Summary",desc:"One page for judge or ombudsman",icon:"⚖️",action:()=>downloadPdf("decisionsummary",dossier)},
+      {label:"Case Overview",desc:"Summary and context",icon:"📋",action:()=>downloadPdf("overview",dossier)},
     {label:"Timeline",desc:"Chronological events",icon:"📅",action:()=>downloadPdf("timeline",dossier)},
     {label:"Witness Statement",desc:"First-person account",icon:"📝",action:()=>downloadPdf("statement",dossier)},
     {label:"Evidence Library",desc:"All items with cover notes",icon:"🗂️",action:()=>downloadPdf("evidence",dossier)},
@@ -507,6 +516,7 @@ function ReadOnlyDossier({dossier}){
       <Panel title={`Evidence Library — ${(dossier.evidence||[]).length} items`} icon="🗂️">{!(dossier.evidence||[]).length?<EmptyState text="No evidence yet."/>:(dossier.evidence||[]).map((e,i)=>(<div key={i} style={{background:"#001e3d",border:`1px solid ${BORDER}`,borderRadius:10,padding:13,marginBottom:9}}><div style={{display:"flex",alignItems:"center",gap:7,marginBottom:6,flexWrap:"wrap"}}><span style={{fontFamily:"'Poppins', sans-serif",fontWeight:700,fontSize:11,color:YELLOW}}>#{String(i+1).padStart(3,"0")}</span><span style={{fontFamily:"'Poppins', sans-serif",fontWeight:700,fontSize:13,color:WHITE,flex:1}}>{e.title}</span>{e.date&&<Tag>{e.date}</Tag>}{e.type&&<Tag color="#7a96b0">{e.type}</Tag>}</div><p style={{margin:"0 0 6px",fontSize:12,color:LIGHT,lineHeight:1.6}}>{e.summary}</p>{e.facts_observed&&<p style={{margin:"0 0 3px",fontSize:11,color:"#7a96b0"}}><span style={{fontWeight:600,textTransform:"uppercase",fontSize:10,letterSpacing:"0.05em"}}>What this shows: </span>{e.facts_observed}</p>}{e.significance&&<p style={{margin:0,fontSize:11,color:YELLOW}}><span style={{fontWeight:600,textTransform:"uppercase",fontSize:10,letterSpacing:"0.05em"}}>Why it matters: </span>{e.significance}</p>}</div>))}</Panel>
       <Panel title="Next Steps" icon="📌">{dossier.next_steps?<p style={{margin:0,fontSize:14,lineHeight:1.8,color:LIGHT,whiteSpace:"pre-wrap"}}>{dossier.next_steps}</p>:<EmptyState text="No next steps yet."/>}</Panel>
       <Panel title="Key Questions in This Case" icon="❓">{dossier.key_questions?<p style={{margin:0,fontSize:14,lineHeight:1.8,color:LIGHT,whiteSpace:"pre-wrap"}}>{dossier.key_questions}</p>:<EmptyState text="Key questions will appear as you add evidence."/>}</Panel>
+      <Panel title="Decision-Maker Summary" icon="⚖️">{dossier.decision_summary?<p style={{margin:0,fontSize:14,lineHeight:1.8,color:LIGHT,whiteSpace:"pre-wrap"}}>{dossier.decision_summary}</p>:<EmptyState text="Decision-Maker Summary will appear after you add evidence. This is the one-page view for a judge, ombudsman, or regulator."/>}</Panel>
     </div>
     {showDownload&&<DownloadModal dossier={dossier} onClose={()=>setShowDownload(false)}/>}
     <style>{`@keyframes pulse{0%,100%{opacity:.3;transform:scale(.8)}50%{opacity:1;transform:scale(1)}}`}</style>
@@ -551,6 +561,8 @@ export default function GoliathonApp(){
   const [urlInput,setUrlInput]=useState("");
   const [showUrl,setShowUrl]=useState(false);
   const [showPasteText,setShowPasteText]=useState(false);
+  const [fileHashes,setFileHashes]=useState(()=>{try{return JSON.parse(localStorage.getItem('goliathon_hashes_'+activeId)||'[]');}catch{return [];}});
+  const [duplicateWarning,setDuplicateWarning]=useState(null);
   const [pasteTextContent,setPasteTextContent]=useState("");
   const [pasteTextDate,setPasteTextDate]=useState("");
   const [pasteTextTitle,setPasteTextTitle]=useState("");
@@ -679,7 +691,7 @@ export default function GoliathonApp(){
       const nextStepsText=typeof dossier?.next_steps==="string"?dossier.next_steps:Array.isArray(dossier?.next_steps)?dossier.next_steps.join("\n"):"";
       const existing=dossier?`\n\nExisting case:\nTitle: ${dossier.case_title||"Unknown"}\nOverview: ${(dossier.overview||"").substring(0,600)}\nTimeline: ${(dossier.timeline||[]).map(t=>`[${t.date}] ${t.event}`).join("; ").substring(0,400)}\nStatement: ${(dossier.witness_statement||"").substring(0,400)}\nEvidence filed (${(dossier.evidence||[]).length}): ${(dossier.evidence||[]).map(e=>e.title).join(", ")}\nNext steps: ${nextStepsText.substring(0,200)}`:"\n\nThis is the FIRST piece of evidence — establish the case title, parties, and initial overview.";
       setProcessingMsg("Analysing evidence…");
-      const prompt=`${existing}\n\nAnalyse this evidence and return ONLY valid JSON with no preamble or markdown:\n{"case_title":"short case title","evidence_item":{"title":"descriptive title","date":"DD Mon YYYY or null","type":"Letter/Email/Statement/Report/Photo/Web Page/Other","summary":"2-3 sentence factual summary of what this document shows","facts_observed":"one sentence listing only what is directly stated or shown in the document — no interpretation","significance":"one sentence explaining why this matters to the case — clearly interpretive"},"timeline_entry":{"date":"DD Mon YYYY or null","event":"one sentence","evidence":"reference to this document"},"overview_update":"updated 3-4 sentence case overview","witness_update":"one or two new sentences in first person only","next_steps_update":"updated numbered list of 3-5 priority actions","key_questions_update":"updated list of 3-5 plain-language questions this case still needs to answer, from the survivor's point of view"}`;
+      const prompt=`${existing}\n\nAnalyse this evidence and return ONLY valid JSON with no preamble or markdown:\n{"case_title":"short case title","evidence_item":{"title":"descriptive title","date":"DD Mon YYYY or null","type":"Letter/Email/Statement/Report/Photo/Web Page/Other","summary":"2-3 sentence factual summary of what this document shows","facts_observed":"one sentence listing only what is directly stated or shown in the document — no interpretation","significance":"one sentence explaining why this matters to the case — clearly interpretive"},"timeline_entry":{"date":"DD Mon YYYY or null","event":"one sentence","evidence":"reference to this document"},"overview_update":"updated 3-4 sentence case overview","witness_update":"one or two new sentences in first person only","next_steps_update":"updated numbered list of 3-5 priority actions","key_questions_update":"updated list of 3-5 plain-language questions this case still needs to answer, from the survivor's point of view","decision_summary_update":"updated one-page decision-maker summary with: (1) What this case is about — 2 sentences; (2) The core dispute — bullet list of 3-5 unanswered questions Barclays/the institution cannot yet answer; (3) Strongest evidence — the 2-3 most significant items filed so far; (4) What happens next — the single most important action. Written in plain English for a judge, ombudsman, or regulator reading this for the first time."}`;
       const response=await callClaude([{...userMessage,content:typeof userMessage.content==="string"?userMessage.content+prompt:[...(Array.isArray(userMessage.content)?userMessage.content:[userMessage.content]),{type:"text",text:prompt}]}]);
       let parsed;try{parsed=JSON.parse(response.replace(/```json|```/g,"").trim());}catch{throw new Error("Could not parse AI response");}
       setProcessingMsg("Updating dossier…");
@@ -690,7 +702,8 @@ export default function GoliathonApp(){
       const newWitness=current.witness_statement?current.witness_statement+"\n\n"+(parsed.witness_update||""):parsed.witness_update||"";
       const newNextSteps=typeof parsed.next_steps_update==="string"?parsed.next_steps_update:Array.isArray(parsed.next_steps_update)?parsed.next_steps_update.map((s,i)=>`${i+1}. ${s}`).join("\n"):(typeof current.next_steps==="string"?current.next_steps:"");
       const newKeyQuestions=typeof parsed.key_questions_update==="string"?parsed.key_questions_update:Array.isArray(parsed.key_questions_update)?parsed.key_questions_update.map((s,i)=>`${i+1}. ${s}`).join("\n"):(typeof current.key_questions==="string"?current.key_questions:"");
-      await updateDossier({...current,case_title:parsed.case_title||current.case_title,overview:parsed.overview_update||current.overview,timeline:newTimeline,witness_statement:newWitness,next_steps:newNextSteps,key_questions:newKeyQuestions,evidence:newEvidence});
+      const newDossier={...current,case_title:parsed.case_title||current.case_title,overview:parsed.overview_update||current.overview,timeline:newTimeline,witness_statement:newWitness,next_steps:newNextSteps,key_questions:newKeyQuestions,evidence:newEvidence,decision_summary:parsed.decision_summary_update||current.decision_summary};
+      await updateDossier(newDossier);
     }catch(e){alert("Something went wrong processing this file. Please try again.\n\n"+e.message);}
     setProcessing(false);setProcessingMsg("");
   },[dossier,updateDossier]);
@@ -728,7 +741,7 @@ export default function GoliathonApp(){
       const imageContent=cameraPages.map(p=>({type:"image",source:{type:"base64",media_type:"image/jpeg",data:p.data}}));
       imageContent.push({type:"text",text:"These are photographed pages of a physical document."});
       const existing=dossier?`\n\nExisting case:\nTitle: ${dossier.case_title}\nOverview: ${(dossier.overview||"").substring(0,400)}\nEvidence filed: ${(dossier.evidence||[]).length} items`:"\n\nThis is the FIRST piece of evidence.";
-      const prompt=`${existing}\n\nAnalyse this photographed document (${cameraPages.length} pages) and return ONLY valid JSON:\n{"case_title":"short title","evidence_item":{"title":"title","date":"DD Mon YYYY or null","type":"Letter/Court Document/Medical/Financial/Other","summary":"2-3 sentence factual summary of what this document shows","facts_observed":"one sentence listing only what is directly stated or shown in the document — no interpretation","significance":"one sentence explaining why this matters to the case — clearly interpretive"},"timeline_entry":{"date":"DD Mon YYYY or null","event":"one sentence","evidence":"reference"},"overview_update":"updated overview","witness_update":"new sentences only","next_steps_update":"numbered 3-5 actions","key_questions_update":"updated list of 3-5 plain-language questions this case still needs to answer"}`;
+      const prompt=`${existing}\n\nAnalyse this photographed document (${cameraPages.length} pages) and return ONLY valid JSON:\n{"case_title":"short title","evidence_item":{"title":"title","date":"DD Mon YYYY or null","type":"Letter/Court Document/Medical/Financial/Other","summary":"2-3 sentence factual summary of what this document shows","facts_observed":"one sentence listing only what is directly stated or shown in the document — no interpretation","significance":"one sentence explaining why this matters to the case — clearly interpretive"},"timeline_entry":{"date":"DD Mon YYYY or null","event":"one sentence","evidence":"reference"},"overview_update":"updated overview","witness_update":"new sentences only","next_steps_update":"numbered 3-5 actions","key_questions_update":"updated list of 3-5 plain-language questions this case still needs to answer","decision_summary_update":"updated one-page decision-maker summary with the same structure as above"}`;
       const res=await fetch("/api/claude",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({model:"claude-sonnet-4-20250514",max_tokens:4000,system:SYSTEM,messages:[{role:"user",content:[...imageContent,{type:"text",text:prompt}]}]})});
       const data=await res.json();const response=data.content?.[0]?.text||"";
       let parsed;try{parsed=JSON.parse(response.replace(/```json|```/g,"").trim());}catch{throw new Error("Could not parse AI response");}

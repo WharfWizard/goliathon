@@ -256,8 +256,8 @@ async function downloadPdf(sectionKey,dossier){
       continue;
     }
 
-    if(item.type==="body"){item={...item,text:cleanNumbering(item.text||'')};
-      const {lines,lineHeight}=pdfWrappedText(doc,item.text,margin,y,contentWidth,9,false,[30,50,80]);
+    if(item.type==="body"){const bodyText=cleanNumbering(item.text||'');
+      const {lines,lineHeight}=pdfWrappedText(doc,bodyText,margin,y,contentWidth,9,false,[30,50,80]);
       for(const line of lines){
         y=checkNewPage(doc,y,lineHeight*1.5,logoB64,caseTitle,sec.title,pageNums);
         doc.setFontSize(9);doc.setFont("helvetica","normal");doc.setTextColor(30,50,80);

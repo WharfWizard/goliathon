@@ -162,6 +162,12 @@ async function hashFile(content){
   return Array.from(new Uint8Array(hashBuffer)).map(b=>b.toString(16).padStart(2,'0')).join('');
 }
 
+function cleanNumbering(text){
+  if(!text)return '';
+  // Strip duplicate numbering like "1. 1." or "2. 2." produced by array-to-string conversion
+  return text.replace(/^(\d+)\. \1\. /gm,'$1. ');
+}
+
 function pdfSection(doc,title,y,margin,contentWidth){
   // Section header with yellow left border
   doc.setFillColor(255,199,44);
@@ -515,7 +521,7 @@ function ReadOnlyDossier({dossier}){
       <Panel title="Witness Statement" icon="📝">{dossier.witness_statement?<p style={{margin:0,fontSize:14,lineHeight:1.9,color:LIGHT,whiteSpace:"pre-wrap"}}>{dossier.witness_statement}</p>:<EmptyState text="No statement yet."/>}</Panel>
       <Panel title={`Evidence Library — ${(dossier.evidence||[]).length} items`} icon="🗂️">{!(dossier.evidence||[]).length?<EmptyState text="No evidence yet."/>:(dossier.evidence||[]).map((e,i)=>(<div key={i} style={{background:"#001e3d",border:`1px solid ${BORDER}`,borderRadius:10,padding:13,marginBottom:9}}><div style={{display:"flex",alignItems:"center",gap:7,marginBottom:6,flexWrap:"wrap"}}><span style={{fontFamily:"'Poppins', sans-serif",fontWeight:700,fontSize:11,color:YELLOW}}>#{String(i+1).padStart(3,"0")}</span><span style={{fontFamily:"'Poppins', sans-serif",fontWeight:700,fontSize:13,color:WHITE,flex:1}}>{e.title}</span>{e.date&&<Tag>{e.date}</Tag>}{e.type&&<Tag color="#7a96b0">{e.type}</Tag>}</div><p style={{margin:"0 0 6px",fontSize:12,color:LIGHT,lineHeight:1.6}}>{e.summary}</p>{e.facts_observed&&<p style={{margin:"0 0 3px",fontSize:11,color:"#7a96b0"}}><span style={{fontWeight:600,textTransform:"uppercase",fontSize:10,letterSpacing:"0.05em"}}>What this shows: </span>{e.facts_observed}</p>}{e.significance&&<p style={{margin:0,fontSize:11,color:YELLOW}}><span style={{fontWeight:600,textTransform:"uppercase",fontSize:10,letterSpacing:"0.05em"}}>Why it matters: </span>{e.significance}</p>}</div>))}</Panel>
       <Panel title="Next Steps" icon="📌">{dossier.next_steps?<p style={{margin:0,fontSize:14,lineHeight:1.8,color:LIGHT,whiteSpace:"pre-wrap"}}>{dossier.next_steps}</p>:<EmptyState text="No next steps yet."/>}</Panel>
-      <Panel title="Key Questions in This Case" icon="❓">{dossier.key_questions?<p style={{margin:0,fontSize:14,lineHeight:1.8,color:LIGHT,whiteSpace:"pre-wrap"}}>{dossier.key_questions}</p>:<EmptyState text="Key questions will appear as you add evidence."/>}</Panel>
+      <Panel title="Key Questions in This Case" icon="❓">{dossier.key_questions?<p style={{margin:0,fontSize:14,lineHeight:1.8,color:LIGHT,whiteSpace:"pre-wrap"}}>{cleanNumbering(dossier.key_questions)}</p>:<EmptyState text="Key questions will appear as you add evidence."/>}</Panel>
       <Panel title="Decision-Maker Summary" icon="⚖️">{dossier.decision_summary?<p style={{margin:0,fontSize:14,lineHeight:1.8,color:LIGHT,whiteSpace:"pre-wrap"}}>{dossier.decision_summary}</p>:<EmptyState text="Decision-Maker Summary will appear after you add evidence. This is the one-page view for a judge, ombudsman, or regulator."/>}</Panel>
     </div>
     {showDownload&&<DownloadModal dossier={dossier} onClose={()=>setShowDownload(false)}/>}
@@ -700,8 +706,10 @@ export default function GoliathonApp(){
       const newTimeline=[...(current.timeline||[])];
       if(parsed.timeline_entry?.event){newTimeline.push(parsed.timeline_entry);newTimeline.sort((a,b)=>{if(!a.date)return 1;if(!b.date)return-1;return new Date(a.date)-new Date(b.date);});}
       const newWitness=current.witness_statement?current.witness_statement+"\n\n"+(parsed.witness_update||""):parsed.witness_update||"";
-      const newNextSteps=typeof parsed.next_steps_update==="string"?parsed.next_steps_update:Array.isArray(parsed.next_steps_update)?parsed.next_steps_update.map((s,i)=>`${i+1}. ${s}`).join("\n"):(typeof current.next_steps==="string"?current.next_steps:"");
-      const newKeyQuestions=typeof parsed.key_questions_update==="string"?parsed.key_questions_update:Array.isArray(parsed.key_questions_update)?parsed.key_questions_update.map((s,i)=>`${i+1}. ${s}`).join("\n"):(typeof current.key_questions==="string"?current.key_questions:"");
+      const rawNextSteps=typeof parsed.next_steps_update==="string"?parsed.next_steps_update:Array.isArray(parsed.next_steps_update)?parsed.next_steps_update.map((s,i)=>`${i+1}. ${s}`.join("\n"):(typeof current.next_steps==="string"?current.next_steps:"");
+      const newNextSteps=cleanNumbering(rawNextSteps);
+      const rawKeyQ=typeof parsed.key_questions_update==="string"?parsed.key_questions_update:Array.isArray(parsed.key_questions_update)?parsed.key_questions_update.map((s,i)=>`${i+1}. ${s}`.join("\n"):(typeof current.key_questions==="string"?current.key_questions:"");
+      const newKeyQuestions=cleanNumbering(rawKeyQ);
       const newDossier={...current,case_title:parsed.case_title||current.case_title,overview:parsed.overview_update||current.overview,timeline:newTimeline,witness_statement:newWitness,next_steps:newNextSteps,key_questions:newKeyQuestions,evidence:newEvidence,decision_summary:parsed.decision_summary_update||current.decision_summary};
       await updateDossier(newDossier);
     }catch(e){alert("Something went wrong processing this file. Please try again.\n\n"+e.message);}
@@ -867,6 +875,8 @@ export default function GoliathonApp(){
             <Panel title="Case Overview" icon="📋" action={<Btn small variant="ghost" onClick={()=>downloadPdf("overview",dossier)}>↓</Btn>}>{dossier.overview?<p style={{margin:0,fontSize:13,lineHeight:1.8,color:LIGHT}}>{dossier.overview}</p>:<EmptyState text="Building overview…"/>}</Panel>
             <Panel title="Witness Statement" icon="📝" action={<Btn small variant="ghost" onClick={()=>downloadPdf("statement",dossier)}>↓</Btn>}>{dossier.witness_statement?<p style={{margin:0,fontSize:13,lineHeight:1.9,color:LIGHT,whiteSpace:"pre-wrap"}}>{dossier.witness_statement}</p>:<EmptyState text="Building statement…"/>}</Panel>
             <Panel title="Next Steps" icon="📌" action={<Btn small variant="ghost" onClick={()=>downloadPdf("nextsteps",dossier)}>↓</Btn>}>{dossier.next_steps?<p style={{margin:0,fontSize:13,lineHeight:1.8,color:LIGHT,whiteSpace:"pre-wrap"}}>{dossier.next_steps}</p>:<EmptyState text="Next steps will appear here…"/>}</Panel>
+            <Panel title="Key Questions in This Case" icon="❓" action={<Btn small variant="ghost" onClick={()=>downloadPdf("keyquestions",dossier)}>↓</Btn>}>{dossier.key_questions?<p style={{margin:0,fontSize:13,lineHeight:1.8,color:LIGHT,whiteSpace:"pre-wrap"}}>{cleanNumbering(dossier.key_questions)}</p>:<EmptyState text="Key questions will appear as you add evidence."/>}</Panel>
+            <Panel title="Decision-Maker Summary" icon="⚖️" action={<Btn small variant="ghost" onClick={()=>downloadPdf("decisionsummary",dossier)}>↓</Btn>}>{dossier.decision_summary?<p style={{margin:0,fontSize:13,lineHeight:1.8,color:LIGHT,whiteSpace:"pre-wrap"}}>{dossier.decision_summary}</p>:<EmptyState text="Decision-Maker Summary will appear after you add evidence. This is the one-page view for a judge, ombudsman, or regulator."/>}</Panel>
           </div>
           <div>
             <Panel title="Timeline" icon="📅" action={<Btn small variant="ghost" onClick={()=>downloadPdf("timeline",dossier)}>↓</Btn>}>

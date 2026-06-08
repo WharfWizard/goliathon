@@ -569,6 +569,9 @@ export default function GoliathonApp(){
   const [urlInput,setUrlInput]=useState("");
   const [showUrl,setShowUrl]=useState(false);
   const [showPasteText,setShowPasteText]=useState(false);
+  const [showThreatIntake,setShowThreatIntake]=useState(false);
+  const [threatForm,setThreatForm]=useState({claimant:'',amount:'',deadline:'',claimType:'mortgage possession',details:''});
+  const [threatProcessing,setThreatProcessing]=useState(false);
   const [fileHashes,setFileHashes]=useState(()=>{try{return JSON.parse(localStorage.getItem('goliathon_hashes_'+activeId)||'[]');}catch{return [];}});
   const [duplicateWarning,setDuplicateWarning]=useState(null);
   const [pasteTextContent,setPasteTextContent]=useState("");
@@ -678,6 +681,61 @@ export default function GoliathonApp(){
     const updated=cases.map(c=>c.id===activeId?{...c,title:titleDraft,dossier:c.dossier?{...c.dossier,case_title:titleDraft}:c.dossier}:c);
     updateCases(updated);if(dossier)updateDossier({...dossier,case_title:titleDraft});setEditingTitle(false);
   },[titleDraft,cases,activeId,dossier,updateCases,updateDossier]);
+
+  const handleThreatIntake=useCallback(async()=>{
+    if(!threatForm.claimant||!threatForm.details)return;
+    setThreatProcessing(true);
+    setShowThreatIntake(false);
+    try{
+      const prompt=`A person has received a legal claim or threat and needs to understand it and challenge the claimant to prove their case.
+
+Claim details:
+- Claimant: ${threatForm.claimant}
+- Claim type: ${threatForm.claimType}
+- Amount/Action demanded: ${threatForm.amount||'not specified'}
+- Response deadline: ${threatForm.deadline||'not specified'}
+- Description: ${threatForm.details}
+
+Return ONLY valid JSON with no preamble or markdown:
+{"case_title":"short case title e.g. [Name] v [Claimant] - [Claim Type]","overview":"3-4 sentence plain-English summary of what the claimant is alleging and what is at stake","witness_statement":"2-3 sentences in first person from the recipient's perspective — what they have received and what they are questioning","timeline_entry":{"date":"today","event":"Received legal claim/threat from ${threatForm.claimant}"},"challenge_questions":["question 1 — what the claimant must prove","question 2","question 3","question 4","question 5"],"burden_of_proof_letter":"A polite but firm letter the recipient can send to the claimant requesting they prove their claim before any response is required. Should ask: (1) the legal basis for the claim, (2) a full account of how the amount was calculated, (3) copies of all executed agreements and documents relied upon, (4) proof of the claimant's legal standing to make the claim. Addressed as Dear Sir/Madam, signed off Yours faithfully. Plain English. No legal jargon. Maximum 200 words.","next_steps":"numbered list of 5 immediate actions starting with sending the challenge letter","decision_summary":"one-page summary for a judge or ombudsman: what is being claimed, what the recipient is questioning, and the five questions the claimant must answer before this can proceed"}`;
+
+      const response=await fetch('/api/claude',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({prompt,maxTokens:2000})});
+      const data=await response.json();
+      const text=data.content?.[0]?.text||'';
+      const clean=text.replace(/```json|```/g,'').trim();
+      const parsed=JSON.parse(clean);
+
+      const newDossier={
+        case_title:parsed.case_title||threatForm.claimant+' — Legal Threat',
+        overview:parsed.overview||'',
+        timeline:[parsed.timeline_entry?{date:new Date().toLocaleDateString('en-GB',{day:'2-digit',month:'short',year:'numeric'}),event:parsed.timeline_entry.event,evidence:'Legal threat received'}:null].filter(Boolean),
+        witness_statement:parsed.witness_statement||'',
+        evidence:[{
+          title:'Legal Claim/Threat — '+threatForm.claimant,
+          date:new Date().toLocaleDateString('en-GB',{day:'2-digit',month:'short',year:'numeric'}),
+          type:'Legal Threat',
+          summary:'Legal claim or threat received from '+threatForm.claimant+(threatForm.amount?' demanding '+threatForm.amount:''),
+          facts_observed:'Claim received from '+threatForm.claimant+(threatForm.amount?', demanding '+threatForm.amount:'')+'. Deadline: '+(threatForm.deadline||'not specified'),
+          significance:'This is the formal legal threat that initiates the case. The claimant must prove every element of this claim before any response is required.',
+          red_flags:null
+        }],
+        next_steps:parsed.next_steps||'',
+        key_questions:parsed.challenge_questions?parsed.challenge_questions.map((q,i)=>i+1+'. '+q).join('\n'):'',
+        decision_summary:parsed.decision_summary||'',
+        burden_of_proof_letter:parsed.burden_of_proof_letter||''
+      };
+      await updateDossier(newDossier);
+
+      // Store hash for the intake
+      const h=await hashFile(threatForm.details+threatForm.claimant);
+      const hashes=JSON.parse(localStorage.getItem('goliathon_hashes_'+activeId)||'[]');
+      hashes.push({hash:h,title:'Legal Threat — '+threatForm.claimant});
+      localStorage.setItem('goliathon_hashes_'+activeId,JSON.stringify(hashes));
+
+    }catch(e){console.error('Threat intake error',e);}
+    setThreatProcessing(false);
+    setThreatForm({claimant:'',amount:'',deadline:'',claimType:'mortgage possession',details:''});
+  },[threatForm,activeId]);
 
   const handlePasteText=useCallback(async()=>{
     if(!pasteTextContent.trim())return;
@@ -813,13 +871,18 @@ export default function GoliathonApp(){
       {dossier&&<StrengthMeter dossier={dossier}/>}
 
       <div onDragOver={e=>{e.preventDefault();setDragOver(true);}} onDragLeave={()=>setDragOver(false)} onDrop={e=>{e.preventDefault();setDragOver(false);handleFile(e.dataTransfer.files[0]);}} onClick={()=>!processing&&fileRef.current?.click()}
-        style={{border:`2px dashed ${dragOver?YELLOW:processing?YELLOW+"60":BORDER}`,borderRadius:16,padding:"22px 14px",textAlign:"center",cursor:processing?"not-allowed":"pointer",background:dragOver?"#001e3d":processing?"#001830":"transparent",transition:"all 0.2s",marginBottom:18}}>
-        {processing?(
-          <div><div style={{marginBottom:10}}><Spinner/></div><p style={{margin:0,fontFamily:"'Poppins', sans-serif",fontWeight:700,fontSize:15,color:YELLOW}}>{processingMsg}</p><p style={{margin:"6px 0 0",fontSize:13,color:"#7a96b0"}}>Goliathon is building your dossier…</p></div>
+        style={{border:`2px dashed ${dragOver?YELLOW:(processing||threatProcessing)?YELLOW+"60":BORDER}`,borderRadius:16,padding:"22px 14px",textAlign:"center",cursor:(processing||threatProcessing)?"not-allowed":"pointer",background:dragOver?"#001e3d":(processing||threatProcessing)?"#001830":"transparent",transition:"all 0.2s",marginBottom:18}}>
+        {(processing||threatProcessing)?(
+          <div><div style={{marginBottom:10}}><Spinner/></div><p style={{margin:0,fontFamily:"'Poppins', sans-serif",fontWeight:700,fontSize:15,color:YELLOW}}>{threatProcessing?"Generating your challenge…":processingMsg}</p><p style={{margin:"6px 0 0",fontSize:13,color:"#7a96b0"}}>{threatProcessing?"Identifying what they must prove and drafting your letter":"Goliathon is building your dossier…"}</p></div>
         ):(
           <div>
             <div style={{fontSize:38,marginBottom:10}}>{evidenceCount===0?"⚖️":"➕"}</div>
             <p style={{margin:"0 0 6px",fontFamily:"'Poppins', sans-serif",fontWeight:700,fontSize:15,color:WHITE}}>{evidenceCount===0?"Upload your first piece of evidence to begin":"Upload your next piece of evidence"}</p>
+              {evidenceCount===0&&<div style={{background:"#ffc72c15",border:"1px solid #ffc72c40",borderRadius:10,padding:"12px 14px",marginBottom:14,textAlign:"left"}}>
+                <p style={{margin:"0 0 8px",fontFamily:"'Poppins', sans-serif",fontWeight:700,fontSize:13,color:WHITE}}>⚡ Just received a legal claim or threat?</p>
+                <p style={{margin:"0 0 10px",fontSize:12,color:"#a0b4c8",lineHeight:1.6}}>Start here. We will immediately identify what the claimant must prove and generate a challenge letter you can send today.</p>
+                <Btn small onClick={e=>{e.stopPropagation();setShowThreatIntake(true);}}>Respond to a Legal Threat</Btn>
+              </div>}
             <p style={{margin:"0 0 14px",fontSize:13,color:"#7a96b0"}}>{evidenceCount===0?"Goliathon will build your case automatically":`${evidenceCount} item${evidenceCount!==1?"s":""} filed — keep adding to build your case`}</p>
             <div style={{display:"flex",gap:8,justifyContent:"center",flexWrap:"wrap"}}>
               <Btn small>📎 Upload File</Btn>
@@ -833,6 +896,52 @@ export default function GoliathonApp(){
       </div>
       <input ref={fileRef} type="file" accept="image/*,.pdf,.txt,.html,.htm,.doc,.docx,.msg" style={{display:"none"}} onChange={e=>handleFile(e.target.files[0])}/>
       <input ref={cameraRef} type="file" accept="image/*" capture="environment" multiple style={{display:"none"}} onChange={handleCameraCapture}/>
+
+      {showThreatIntake&&(
+        <div style={{position:"fixed",inset:0,background:"rgba(0,20,40,0.92)",zIndex:200,display:"flex",alignItems:"center",justifyContent:"center",padding:20,overflowY:"auto"}} onClick={()=>setShowThreatIntake(false)}>
+          <div style={{background:"#0d2137",border:"1px solid #ffc72c60",borderRadius:16,padding:24,width:"100%",maxWidth:580}} onClick={e=>e.stopPropagation()}>
+            <h3 style={{margin:"0 0 6px",color:"#ffc72c",fontFamily:"'Poppins', sans-serif",fontSize:17}}>⚡ Respond to a Legal Claim or Threat</h3>
+            <p style={{margin:"0 0 18px",fontSize:12,color:"#7a96b0",lineHeight:1.7}}>Tell us about the claim you have received. We will identify what the claimant must prove and generate a challenge letter you can send today — before you are required to respond.</p>
+
+            <label style={{display:"block",fontSize:11,color:"#7a96b0",marginBottom:4,textTransform:"uppercase",letterSpacing:"0.05em"}}>Who is claiming against you?</label>
+            <input value={threatForm.claimant} onChange={e=>setThreatForm(f=>({...f,claimant:e.target.value}))} placeholder="e.g. Barclays Bank PLC, Halifax, a debt collector…" style={{width:"100%",boxSizing:"border-box",background:"#0a1929",border:"1px solid #1e3a5f",borderRadius:8,padding:"8px 10px",color:"#c8dae6",fontSize:13,marginBottom:12}}/>
+
+            <label style={{display:"block",fontSize:11,color:"#7a96b0",marginBottom:4,textTransform:"uppercase",letterSpacing:"0.05em"}}>Type of claim</label>
+            <select value={threatForm.claimType} onChange={e=>setThreatForm(f=>({...f,claimType:e.target.value}))} style={{width:"100%",boxSizing:"border-box",background:"#0a1929",border:"1px solid #1e3a5f",borderRadius:8,padding:"8px 10px",color:"#c8dae6",fontSize:13,marginBottom:12}}>
+              <option>mortgage possession</option>
+              <option>debt claim</option>
+              <option>county court judgment</option>
+              <option>letter before action</option>
+              <option>charging order</option>
+              <option>bankruptcy petition</option>
+              <option>other legal threat</option>
+            </select>
+
+            <div style={{display:"flex",gap:10,marginBottom:12}}>
+              <div style={{flex:1}}>
+                <label style={{display:"block",fontSize:11,color:"#7a96b0",marginBottom:4,textTransform:"uppercase",letterSpacing:"0.05em"}}>Amount claimed</label>
+                <input value={threatForm.amount} onChange={e=>setThreatForm(f=>({...f,amount:e.target.value}))} placeholder="e.g. £7,502.13" style={{width:"100%",boxSizing:"border-box",background:"#0a1929",border:"1px solid #1e3a5f",borderRadius:8,padding:"8px 10px",color:"#c8dae6",fontSize:13}}/>
+              </div>
+              <div style={{flex:1}}>
+                <label style={{display:"block",fontSize:11,color:"#7a96b0",marginBottom:4,textTransform:"uppercase",letterSpacing:"0.05em"}}>Response deadline</label>
+                <input value={threatForm.deadline} onChange={e=>setThreatForm(f=>({...f,deadline:e.target.value}))} placeholder="e.g. 14 days, 9 Dec 2025" style={{width:"100%",boxSizing:"border-box",background:"#0a1929",border:"1px solid #1e3a5f",borderRadius:8,padding:"8px 10px",color:"#c8dae6",fontSize:13}}/>
+              </div>
+            </div>
+
+            <label style={{display:"block",fontSize:11,color:"#7a96b0",marginBottom:4,textTransform:"uppercase",letterSpacing:"0.05em"}}>Describe the claim in your own words</label>
+            <textarea value={threatForm.details} onChange={e=>setThreatForm(f=>({...f,details:e.target.value}))} placeholder="What are they claiming? What happened? What do you dispute?" rows={5} style={{width:"100%",boxSizing:"border-box",background:"#0a1929",border:"1px solid #1e3a5f",borderRadius:8,padding:"10px",color:"#c8dae6",fontSize:13,lineHeight:1.7,resize:"vertical",fontFamily:"inherit",marginBottom:16}}/>
+
+            <div style={{background:"#001830",border:"1px solid #1e3a5f",borderRadius:8,padding:"10px 12px",marginBottom:16}}>
+              <p style={{margin:0,fontSize:11,color:"#7a96b0",lineHeight:1.6}}>⚡ We will generate: five questions the claimant must answer · a challenge letter you can send today · your case overview and timeline · a Decision-Maker Summary</p>
+            </div>
+
+            <div style={{display:"flex",gap:8,justifyContent:"flex-end"}}>
+              <Btn small variant="subtle" onClick={()=>setShowThreatIntake(false)}>Cancel</Btn>
+              <Btn small onClick={handleThreatIntake} disabled={!threatForm.claimant||!threatForm.details}>Generate Challenge</Btn>
+            </div>
+          </div>
+        </div>
+      )}
 
       {showPasteText&&(
         <div style={{position:"fixed",inset:0,background:"rgba(0,20,40,0.85)",zIndex:200,display:"flex",alignItems:"center",justifyContent:"center",padding:20}} onClick={()=>setShowPasteText(false)}>
@@ -879,6 +988,7 @@ export default function GoliathonApp(){
             <Panel title="Next Steps" icon="📌" action={<Btn small variant="ghost" onClick={()=>downloadPdf("nextsteps",dossier)}>↓</Btn>}>{dossier.next_steps?<p style={{margin:0,fontSize:13,lineHeight:1.8,color:LIGHT,whiteSpace:"pre-wrap"}}>{dossier.next_steps}</p>:<EmptyState text="Next steps will appear here…"/>}</Panel>
             <Panel title="Key Questions in This Case" icon="❓" action={<Btn small variant="ghost" onClick={()=>downloadPdf("keyquestions",dossier)}>↓</Btn>}>{dossier.key_questions?<p style={{margin:0,fontSize:13,lineHeight:1.8,color:LIGHT,whiteSpace:"pre-wrap"}}>{cleanNumbering(dossier.key_questions)}</p>:<EmptyState text="Key questions will appear as you add evidence."/>}</Panel>
             <Panel title="Decision-Maker Summary" icon="⚖️" action={<Btn small variant="ghost" onClick={()=>downloadPdf("decisionsummary",dossier)}>↓</Btn>}>{dossier.decision_summary?<p style={{margin:0,fontSize:13,lineHeight:1.8,color:LIGHT,whiteSpace:"pre-wrap"}}>{dossier.decision_summary}</p>:<EmptyState text="Decision-Maker Summary will appear after you add evidence. This is the one-page view for a judge, ombudsman, or regulator."/>}</Panel>
+            {dossier.burden_of_proof_letter&&<Panel title="Burden of Proof Challenge Letter" icon="✉️" action={<Btn small variant="ghost" onClick={()=>{const blob=new Blob([dossier.burden_of_proof_letter],{type:'text/plain'});const u=URL.createObjectURL(blob);const a=document.createElement('a');a.href=u;a.download='Challenge_Letter.txt';a.click();}}>↓</Btn>}><p style={{margin:"0 0 10px",fontSize:12,color:"#a0b4c8",lineHeight:1.6}}>This letter asks the claimant to prove their case before you are required to respond. Review, adapt if needed, then send by recorded post or email with read receipt.</p><p style={{margin:0,fontSize:13,lineHeight:1.8,color:LIGHT,whiteSpace:"pre-wrap",background:"#001830",padding:12,borderRadius:8,border:"1px solid #1e3a5f"}}>{dossier.burden_of_proof_letter}</p></Panel>}
           </div>
           <div>
             <Panel title="Timeline" icon="📅" action={<Btn small variant="ghost" onClick={()=>downloadPdf("timeline",dossier)}>↓</Btn>}>

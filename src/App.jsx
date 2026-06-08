@@ -575,6 +575,8 @@ export default function GoliathonApp(){
   const [showPasteText,setShowPasteText]=useState(false);
   const [showThreatIntake,setShowThreatIntake]=useState(false);
   const [threatForm,setThreatForm]=useState({claimant:'',amount:'',deadline:'',claimType:'mortgage possession',details:''});
+  const [threatFile,setThreatFile]=useState(null);
+  const threatFileRef=useRef(null);
   const [threatProcessing,setThreatProcessing]=useState(false);
   const [fileHashes,setFileHashes]=useState(()=>{try{return JSON.parse(localStorage.getItem('goliathon_hashes_'+activeId)||'[]');}catch{return [];}});
   const [duplicateWarning,setDuplicateWarning]=useState(null);
@@ -735,9 +737,16 @@ Return ONLY valid JSON with no preamble or markdown:
       hashes.push({hash:h,title:'Legal Threat — '+threatForm.claimant});
       localStorage.setItem('goliathon_hashes_'+activeId,JSON.stringify(hashes));
 
-    }catch(e){console.error('Threat intake error',e);}
+      // If a file was attached, process it as evidence too
+      if(threatFile){
+        setThreatProcessing(false);
+        await handleFile(threatFile);
+      }
+
+    }catch(e){console.error('Threat intake error',e);alert('Something went wrong: '+e.message);}
     setThreatProcessing(false);
     setThreatForm({claimant:'',amount:'',deadline:'',claimType:'mortgage possession',details:''});
+    setThreatFile(null);
   },[threatForm,activeId]);
 
   const handlePasteText=useCallback(async()=>{
@@ -889,7 +898,7 @@ Return ONLY valid JSON with no preamble or markdown:
             <p style={{margin:"0 0 6px",fontFamily:"'Poppins', sans-serif",fontWeight:700,fontSize:15,color:WHITE}}>{evidenceCount===0?"Upload your first piece of evidence to begin":"Upload your next piece of evidence"}</p>
             <p style={{margin:"0 0 14px",fontSize:13,color:"#7a96b0"}}>{evidenceCount===0?"Goliathon will build your case automatically":`${evidenceCount} item${evidenceCount!==1?"s":""} filed — keep adding to build your case`}</p>
             <div style={{display:"flex",gap:8,justifyContent:"center",flexWrap:"wrap"}}>
-              <Btn small onClick={e=>{e.stopPropagation();fileRef.current?.click();}}>📎 Upload File</Btn>
+              <label style={{cursor:"pointer"}} onClick={e=>e.stopPropagation()}><Btn small>📎 Upload File</Btn><input type="file" accept="image/*,.pdf,.txt,.html,.htm,.doc,.docx,.msg" style={{display:"none"}} onChange={e=>{if(e.target.files[0])handleFile(e.target.files[0]);}}/></label>
               <Btn small variant="subtle" onClick={e=>{e.stopPropagation();setShowCamera(true);setCameraPages([]);}}>📷 Camera Scan</Btn>
               <Btn small variant="subtle" onClick={e=>{e.stopPropagation();setShowUrl(true);}}>🔗 Add URL</Btn>
               <Btn small variant="subtle" onClick={e=>{e.stopPropagation();setShowPasteText(true);}}>📝 Paste Text</Btn>
@@ -935,12 +944,21 @@ Return ONLY valid JSON with no preamble or markdown:
             <label style={{display:"block",fontSize:11,color:"#7a96b0",marginBottom:4,textTransform:"uppercase",letterSpacing:"0.05em"}}>Describe the claim in your own words</label>
             <textarea value={threatForm.details} onChange={e=>setThreatForm(f=>({...f,details:e.target.value}))} placeholder="What are they claiming? What happened? What do you dispute?" rows={5} style={{width:"100%",boxSizing:"border-box",background:"#0a1929",border:"1px solid #1e3a5f",borderRadius:8,padding:"10px",color:"#c8dae6",fontSize:13,lineHeight:1.7,resize:"vertical",fontFamily:"inherit",marginBottom:16}}/>
 
+            <label style={{display:"block",fontSize:11,color:"#7a96b0",marginBottom:4,textTransform:"uppercase",letterSpacing:"0.05em"}}>Attach the letter or document (optional)</label>
+            <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:16}}>
+              <label style={{flex:1,background:"#0a1929",border:"1px solid #1e3a5f",borderRadius:8,padding:"8px 10px",color:threatFile?"#c8dae6":"#5a7a96",fontSize:12,cursor:"pointer",display:"block",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>
+                {threatFile?threatFile.name:"📎 Tap to attach photo or file of the letter…"}
+                <input ref={threatFileRef} type="file" accept="image/*,.pdf,.doc,.docx,.txt" style={{display:"none"}} onChange={e=>{if(e.target.files[0])setThreatFile(e.target.files[0]);}}/>
+              </label>
+              {threatFile&&<Btn small variant="subtle" onClick={()=>{setThreatFile(null);if(threatFileRef.current)threatFileRef.current.value="";}}>✕</Btn>}
+            </div>
+
             <div style={{background:"#001830",border:"1px solid #1e3a5f",borderRadius:8,padding:"10px 12px",marginBottom:16}}>
-              <p style={{margin:0,fontSize:11,color:"#7a96b0",lineHeight:1.6}}>⚡ We will generate: five questions the claimant must answer · a challenge letter you can send today · your case overview and timeline · a Decision-Maker Summary</p>
+              <p style={{margin:0,fontSize:11,color:"#7a96b0",lineHeight:1.6}}>⚡ We will generate: five questions the claimant must answer · a challenge letter you can send today · your case overview · a Decision-Maker Summary{threatFile?" · full analysis of the attached document":""}</p>
             </div>
 
             <div style={{display:"flex",gap:8,justifyContent:"flex-end"}}>
-              <Btn small variant="subtle" onClick={()=>setShowThreatIntake(false)}>Cancel</Btn>
+              <Btn small variant="subtle" onClick={()=>{setShowThreatIntake(false);setThreatFile(null);}}>Cancel</Btn>
               <Btn small onClick={handleThreatIntake} disabled={!threatForm.claimant||!threatForm.details}>Generate Challenge</Btn>
             </div>
           </div>

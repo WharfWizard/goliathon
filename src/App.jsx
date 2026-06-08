@@ -690,38 +690,65 @@ export default function GoliathonApp(){
   },[titleDraft,cases,activeId,dossier,updateCases,updateDossier]);
 
   const handleThreatIntake=useCallback(async()=>{
-    if(!threatForm.claimant||!threatForm.details)return;
+    if(!threatForm.claimant&&!threatFile)return;
     setThreatProcessing(true);
     setShowThreatIntake(false);
     try{
-      const prompt=`A person has received a legal claim or threat and needs to understand it and challenge the claimant to prove their case.
+      // Read file first if attached so we can include it in the single analysis
+      let fileContent=null;
+      let fileMediaType='text/plain';
+      if(threatFile){
+        const ext=threatFile.name.split('.').pop().toLowerCase();
+        if(['jpg','jpeg','png','gif','webp'].includes(ext)){
+          fileContent=await fileToBase64(threatFile);
+          fileMediaType=threatFile.type||'image/jpeg';
+        } else if(ext==='pdf'){
+          fileContent=await fileToBase64(threatFile);
+          fileMediaType='application/pdf';
+        } else {
+          fileContent=await new Promise(res=>{const r=new FileReader();r.onload=e=>res(e.target.result);r.readAsText(threatFile);});
+        }
+      }
 
-Claim details:
-- Claimant: ${threatForm.claimant}
-- Claim type: ${threatForm.claimType}
-- Amount/Action demanded: ${threatForm.amount||'not specified'}
-- Response deadline: ${threatForm.deadline||'not specified'}
-- Description: ${threatForm.details}
+      const contextLines=[
+        threatForm.claimant?'- Claimant: '+threatForm.claimant:'',
+        '- Claim type: '+threatForm.claimType,
+        threatForm.amount?'- Amount demanded: '+threatForm.amount:'',
+        threatForm.deadline?'- Response deadline: '+threatForm.deadline:'',
+        threatForm.details?'- Additional context from recipient: '+threatForm.details:'',
+        (fileContent&&fileMediaType==='text/plain')?'\n--- DOCUMENT TEXT ---\n'+fileContent.substring(0,3000):''
+      ].filter(Boolean).join('\n');
 
-Return ONLY valid JSON with no preamble or markdown:
-{"case_title":"short case title e.g. [Name] v [Claimant] - [Claim Type]","overview":"3-4 sentence plain-English summary of what the claimant is alleging and what is at stake","witness_statement":"2-3 sentences in first person from the recipient's perspective — what they have received and what they are questioning","timeline_entry":{"date":"today","event":"Received legal claim/threat from ${threatForm.claimant}"},"challenge_questions":["question 1 — what the claimant must prove","question 2","question 3","question 4","question 5"],"burden_of_proof_letter":"Short formal letter (max 150 words) asking claimant to prove: legal basis, amount calculation, all agreements relied upon, and their legal standing to make this claim. Dear Sir/Madam / Yours faithfully format.","next_steps":"numbered list of 5 immediate actions starting with sending the challenge letter","decision_summary":"one-page summary for a judge or ombudsman: what is being claimed, what the recipient is questioning, and the five questions the claimant must answer before this can proceed"}`;
+      const jsonSpec='{"case_title":"[Recipient] v [exact claimant name from document or form]","overview":"3-4 sentences naming the exact sending organisation, reference numbers, amounts, and what is being claimed — use specific details from the document","witness_statement":"2-3 sentences in first person using specific names, amounts and dates from the document","timeline_entry":{"date":"today","event":"Received [exact document type e.g. Final Notice, Letter Before Action] from [exact sender name]"},"challenge_questions":["5 specific questions based on exact details in the document — name parties, reference numbers, specific amounts"],"burden_of_proof_letter":"Formal letter max 150 words naming the exact claimant/debt collector, referencing exact amounts and reference numbers from the document. Dear Sir/Madam / Yours faithfully.","next_steps":"5 numbered specific actions using exact names and details from the document","decision_summary":"one page naming specific parties, exact amounts, dates, and 5 questions they cannot answer","document_title":"short descriptive title naming the sender and document type","document_facts":"one sentence: exact sender name, recipient, amount, date, reference numbers as stated in the document","document_significance":"one sentence: why this specific document matters legally"}';
 
-      const text=await callClaude([{role:'user',content:prompt}]);
+      const instructions='Analyse this carefully. Use SPECIFIC details — exact names of organisations, reference numbers, amounts, dates. Do NOT use generic placeholders. Return ONLY valid JSON:\n'+jsonSpec;
+
+      let text;
+      if(fileContent&&fileMediaType!=='text/plain'){
+        const isImg=fileMediaType.startsWith('image/');
+        text=await callClaude([{role:'user',content:[
+          isImg?{type:'image',source:{type:'base64',media_type:fileMediaType,data:fileContent}}:{type:'document',source:{type:'base64',media_type:'application/pdf',data:fileContent}},
+          {type:'text',text:'This is a legal claim or threat document received by the user.\n\nAdditional context:\n'+contextLines+'\n\n'+instructions}
+        ]}]);
+      } else {
+        text=await callClaude([{role:'user',content:'A person has received a legal claim or threat.\n\nAll available information:\n'+contextLines+'\n\n'+instructions}]);
+      }
+
       const clean=text.replace(/```json|```/g,'').trim();
       const parsed=JSON.parse(clean);
-
+      const today=new Date().toLocaleDateString('en-GB',{day:'2-digit',month:'short',year:'numeric'});
       const newDossier={
-        case_title:parsed.case_title||threatForm.claimant+' — Legal Threat',
+        case_title:parsed.case_title||(threatForm.claimant?'Recipient v '+threatForm.claimant:'Legal Threat'),
         overview:parsed.overview||'',
-        timeline:[parsed.timeline_entry?{date:new Date().toLocaleDateString('en-GB',{day:'2-digit',month:'short',year:'numeric'}),event:parsed.timeline_entry.event,evidence:'Legal threat received'}:null].filter(Boolean),
+        timeline:[{date:today,event:parsed.timeline_entry?.event||('Received legal claim from '+(threatForm.claimant||'unknown')),evidence:parsed.document_title||'Legal threat document'}],
         witness_statement:parsed.witness_statement||'',
         evidence:[{
-          title:'Legal Claim/Threat — '+threatForm.claimant,
-          date:new Date().toLocaleDateString('en-GB',{day:'2-digit',month:'short',year:'numeric'}),
+          title:parsed.document_title||(threatForm.claimant?'Legal Claim — '+threatForm.claimant:'Legal Threat Document'),
+          date:today,
           type:'Legal Threat',
-          summary:'Legal claim or threat received from '+threatForm.claimant+(threatForm.amount?' demanding '+threatForm.amount:''),
-          facts_observed:'Claim received from '+threatForm.claimant+(threatForm.amount?', demanding '+threatForm.amount:'')+'. Deadline: '+(threatForm.deadline||'not specified'),
-          significance:'This is the formal legal threat that initiates the case. The claimant must prove every element of this claim before any response is required.',
+          summary:parsed.overview||(threatForm.claimant?'Legal claim received from '+threatForm.claimant:''),
+          facts_observed:parsed.document_facts||('Claim received'+(threatForm.claimant?' from '+threatForm.claimant:'')+(threatForm.amount?', demanding '+threatForm.amount:'')),
+          significance:parsed.document_significance||'This is the formal legal threat that initiates the case.',
           red_flags:null
         }],
         next_steps:parsed.next_steps||'',
@@ -730,24 +757,16 @@ Return ONLY valid JSON with no preamble or markdown:
         burden_of_proof_letter:parsed.burden_of_proof_letter||''
       };
       await updateDossier(newDossier);
-
-      // Store hash for the intake
-      const h=await hashFile(threatForm.details+threatForm.claimant);
+      const h=await hashFile((threatForm.details||'')+(threatForm.claimant||'')+(threatFile?threatFile.name:''));
       const hashes=JSON.parse(localStorage.getItem('goliathon_hashes_'+activeId)||'[]');
-      hashes.push({hash:h,title:'Legal Threat — '+threatForm.claimant});
+      hashes.push({hash:h,title:parsed.document_title||('Legal Threat — '+(threatForm.claimant||'unknown'))});
       localStorage.setItem('goliathon_hashes_'+activeId,JSON.stringify(hashes));
-
-      // If a file was attached, process it as evidence too
-      if(threatFile){
-        setThreatProcessing(false);
-        await handleFile(threatFile);
-      }
-
     }catch(e){console.error('Threat intake error',e);alert('Something went wrong: '+e.message);}
     setThreatProcessing(false);
     setThreatForm({claimant:'',amount:'',deadline:'',claimType:'mortgage possession',details:''});
     setThreatFile(null);
-  },[threatForm,activeId]);
+  },[threatForm,threatFile,activeId]);
+
 
   const handlePasteText=useCallback(async()=>{
     if(!pasteTextContent.trim())return;
@@ -959,7 +978,7 @@ Return ONLY valid JSON with no preamble or markdown:
 
             <div style={{display:"flex",gap:8,justifyContent:"flex-end"}}>
               <Btn small variant="subtle" onClick={()=>{setShowThreatIntake(false);setThreatFile(null);}}>Cancel</Btn>
-              <Btn small onClick={handleThreatIntake} disabled={!threatForm.claimant||!threatForm.details}>Generate Challenge</Btn>
+              <Btn small onClick={handleThreatIntake} disabled={!threatForm.claimant&&!threatFile}>Generate Challenge</Btn>
             </div>
           </div>
         </div>

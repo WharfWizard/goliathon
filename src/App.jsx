@@ -699,9 +699,7 @@ Claim details:
 Return ONLY valid JSON with no preamble or markdown:
 {"case_title":"short case title e.g. [Name] v [Claimant] - [Claim Type]","overview":"3-4 sentence plain-English summary of what the claimant is alleging and what is at stake","witness_statement":"2-3 sentences in first person from the recipient's perspective — what they have received and what they are questioning","timeline_entry":{"date":"today","event":"Received legal claim/threat from ${threatForm.claimant}"},"challenge_questions":["question 1 — what the claimant must prove","question 2","question 3","question 4","question 5"],"burden_of_proof_letter":"A polite but firm letter the recipient can send to the claimant requesting they prove their claim before any response is required. Should ask: (1) the legal basis for the claim, (2) a full account of how the amount was calculated, (3) copies of all executed agreements and documents relied upon, (4) proof of the claimant's legal standing to make the claim. Addressed as Dear Sir/Madam, signed off Yours faithfully. Plain English. No legal jargon. Maximum 200 words.","next_steps":"numbered list of 5 immediate actions starting with sending the challenge letter","decision_summary":"one-page summary for a judge or ombudsman: what is being claimed, what the recipient is questioning, and the five questions the claimant must answer before this can proceed"}`;
 
-      const response=await fetch('/api/claude',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({prompt,maxTokens:2000})});
-      const data=await response.json();
-      const text=data.content?.[0]?.text||'';
+      const text=await callClaude([{role:'user',content:prompt}]);
       const clean=text.replace(/```json|```/g,'').trim();
       const parsed=JSON.parse(clean);
 

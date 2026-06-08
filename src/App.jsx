@@ -889,7 +889,7 @@ Return ONLY valid JSON with no preamble or markdown:
             <p style={{margin:"0 0 6px",fontFamily:"'Poppins', sans-serif",fontWeight:700,fontSize:15,color:WHITE}}>{evidenceCount===0?"Upload your first piece of evidence to begin":"Upload your next piece of evidence"}</p>
             <p style={{margin:"0 0 14px",fontSize:13,color:"#7a96b0"}}>{evidenceCount===0?"Goliathon will build your case automatically":`${evidenceCount} item${evidenceCount!==1?"s":""} filed — keep adding to build your case`}</p>
             <div style={{display:"flex",gap:8,justifyContent:"center",flexWrap:"wrap"}}>
-              <Btn small>📎 Upload File</Btn>
+              <Btn small onClick={e=>{e.stopPropagation();fileRef.current?.click();}}>📎 Upload File</Btn>
               <Btn small variant="subtle" onClick={e=>{e.stopPropagation();setShowCamera(true);setCameraPages([]);}}>📷 Camera Scan</Btn>
               <Btn small variant="subtle" onClick={e=>{e.stopPropagation();setShowUrl(true);}}>🔗 Add URL</Btn>
               <Btn small variant="subtle" onClick={e=>{e.stopPropagation();setShowPasteText(true);}}>📝 Paste Text</Btn>

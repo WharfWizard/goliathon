@@ -48,7 +48,9 @@ function genId(){return Math.random().toString(36).substring(2,10)+Math.random()
 function formatDate(iso){if(!iso)return"";try{return new Date(iso).toLocaleDateString("en-GB",{day:"numeric",month:"short",year:"numeric"});}catch{return iso;}}
 async function callClaude(messages){
   const r=await fetch("/api/claude",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({model:"claude-sonnet-4-20250514",max_tokens:4000,system:SYSTEM,messages})});
-  const d=await r.json();return d.content?.[0]?.text||"";
+  const d=await r.json();
+  if(d.error||d.type==='error')throw new Error(d.error||d.error_message||'API error');
+  return d.content?.[0]?.text||"";
 }
 function fileToBase64(file){return new Promise((res,rej)=>{const r=new FileReader();r.onload=()=>res(r.result.split(",")[1]);r.onerror=rej;r.readAsDataURL(file);});}
 function compressImage(file){
@@ -606,7 +608,8 @@ export default function GoliathonApp(){
   const updateDossier=useCallback(async(newDossier)=>{
     const updated=cases.map(c=>c.id===activeId?{...c,dossier:newDossier,title:newDossier.case_title||c.title}:c);
     updateCases(updated);setSaved(false);
-    try{await saveDossierToDb({...newDossier,share_id:shareId},isSavedRef.current);isSavedRef.current=true;setSaved(true);}
+    const {burden_of_proof_letter:_bpl,...dossierForDb}=newDossier;
+    try{await saveDossierToDb({...dossierForDb,share_id:shareId},isSavedRef.current);isSavedRef.current=true;setSaved(true);}
     catch(e){console.error("Save error:",e);}
   },[cases,activeId,shareId,updateCases]);
 

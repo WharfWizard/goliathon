@@ -873,6 +873,12 @@ Return ONLY valid JSON with no preamble or markdown:
 
       {dossier&&<StrengthMeter dossier={dossier}/>}
 
+      {evidenceCount===0&&!processing&&!threatProcessing&&<div style={{background:"#ffc72c15",border:"1px solid #ffc72c40",borderRadius:10,padding:"12px 14px",marginBottom:14,textAlign:"left"}}>
+        <p style={{margin:"0 0 8px",fontFamily:"'Poppins', sans-serif",fontWeight:700,fontSize:13,color:WHITE}}>⚡ Just received a legal claim or threat?</p>
+        <p style={{margin:"0 0 10px",fontSize:12,color:"#a0b4c8",lineHeight:1.6}}>Start here. We will immediately identify what the claimant must prove and generate a challenge letter you can send today.</p>
+        <Btn small onClick={()=>setShowThreatIntake(true)}>Respond to a Legal Threat</Btn>
+      </div>}
+
       <div onDragOver={e=>{e.preventDefault();setDragOver(true);}} onDragLeave={()=>setDragOver(false)} onDrop={e=>{e.preventDefault();setDragOver(false);handleFile(e.dataTransfer.files[0]);}} onClick={()=>!processing&&fileRef.current?.click()}
         style={{border:`2px dashed ${dragOver?YELLOW:(processing||threatProcessing)?YELLOW+"60":BORDER}`,borderRadius:16,padding:"22px 14px",textAlign:"center",cursor:(processing||threatProcessing)?"not-allowed":"pointer",background:dragOver?"#001e3d":(processing||threatProcessing)?"#001830":"transparent",transition:"all 0.2s",marginBottom:18}}>
         {(processing||threatProcessing)?(
@@ -881,11 +887,6 @@ Return ONLY valid JSON with no preamble or markdown:
           <div>
             <div style={{fontSize:38,marginBottom:10}}>{evidenceCount===0?"⚖️":"➕"}</div>
             <p style={{margin:"0 0 6px",fontFamily:"'Poppins', sans-serif",fontWeight:700,fontSize:15,color:WHITE}}>{evidenceCount===0?"Upload your first piece of evidence to begin":"Upload your next piece of evidence"}</p>
-              {evidenceCount===0&&<div style={{background:"#ffc72c15",border:"1px solid #ffc72c40",borderRadius:10,padding:"12px 14px",marginBottom:14,textAlign:"left"}}>
-                <p style={{margin:"0 0 8px",fontFamily:"'Poppins', sans-serif",fontWeight:700,fontSize:13,color:WHITE}}>⚡ Just received a legal claim or threat?</p>
-                <p style={{margin:"0 0 10px",fontSize:12,color:"#a0b4c8",lineHeight:1.6}}>Start here. We will immediately identify what the claimant must prove and generate a challenge letter you can send today.</p>
-                <Btn small onClick={e=>{e.stopPropagation();setShowThreatIntake(true);}}>Respond to a Legal Threat</Btn>
-              </div>}
             <p style={{margin:"0 0 14px",fontSize:13,color:"#7a96b0"}}>{evidenceCount===0?"Goliathon will build your case automatically":`${evidenceCount} item${evidenceCount!==1?"s":""} filed — keep adding to build your case`}</p>
             <div style={{display:"flex",gap:8,justifyContent:"center",flexWrap:"wrap"}}>
               <Btn small>📎 Upload File</Btn>

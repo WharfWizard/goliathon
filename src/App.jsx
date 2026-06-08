@@ -700,8 +700,8 @@ export default function GoliathonApp(){
       if(threatFile){
         const ext=threatFile.name.split('.').pop().toLowerCase();
         if(['jpg','jpeg','png','gif','webp'].includes(ext)){
-          fileContent=await fileToBase64(threatFile);
-          fileMediaType=threatFile.type||'image/jpeg';
+          fileContent=await resizeImageFile(threatFile,1200);
+          fileMediaType='image/jpeg';
         } else if(ext==='pdf'){
           fileContent=await fileToBase64(threatFile);
           fileMediaType='application/pdf';

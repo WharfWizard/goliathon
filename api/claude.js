@@ -1,3 +1,11 @@
+export const config = {
+  api: {
+    bodyParser: {
+      sizeLimit: '10mb',
+    },
+  },
+};
+
 export default async function handler(req, res) {
   if (req.method !== "POST") return res.status(405).end();
   try {
@@ -12,7 +20,7 @@ export default async function handler(req, res) {
     });
     if (!response.ok) {
       const errText = await response.text();
-      return res.status(response.status).json({error: errText, content: [{type:"text",text:"Error: "+response.status+" "+errText.substring(0,100)}]});
+      return res.status(response.status).json({error: errText, content: [{type:"text",text:"Error: "+response.status}]});
     }
     const data = await response.json();
     res.status(200).json(data);

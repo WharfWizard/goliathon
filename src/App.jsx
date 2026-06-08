@@ -164,10 +164,9 @@ async function hashFile(content){
 
 function cleanNumbering(text){
   if(!text)return '';
-  // Insert newline before numbered items if missing (e.g. "1. Foo2. Bar" → "1. Foo\n2. Bar")
-  let t=text.replace(/([^
-])(d+\.\s)/g,(m,prev,num)=>prev+'\n'+num);
-  // Strip "1. 1." "2. 2." duplicate numbering
+  // Insert newline before numbered items if missing
+  let t=text.replace(/([^\n])(\d+\. )/g,(m,prev,num)=>prev+'\n'+num);
+  // Strip "1. 1." duplicate numbering
   t=t.replace(/^(\d+)\.\s+\1\.\s+/gm,'$1. ');
   t=t.replace(/^(\d+)\.\s+(\d+)\.\s+(?=\D)/gm,(m,a,b)=>a===b?a+'. ':m);
   return t;

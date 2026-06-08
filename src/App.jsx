@@ -700,7 +700,20 @@ export default function GoliathonApp(){
       if(threatFile){
         const ext=threatFile.name.split('.').pop().toLowerCase();
         if(['jpg','jpeg','png','gif','webp'].includes(ext)){
-          fileContent=await resizeImageFile(threatFile,1200);
+          fileContent=await new Promise(res=>{
+            const img=new Image();
+            const url=URL.createObjectURL(threatFile);
+            img.onload=()=>{
+              const scale=Math.min(1,1200/Math.max(img.width,img.height));
+              const canvas=document.createElement('canvas');
+              canvas.width=Math.round(img.width*scale);
+              canvas.height=Math.round(img.height*scale);
+              canvas.getContext('2d').drawImage(img,0,0,canvas.width,canvas.height);
+              URL.revokeObjectURL(url);
+              res(canvas.toDataURL('image/jpeg',0.82).split(',')[1]);
+            };
+            img.src=url;
+          });
           fileMediaType='image/jpeg';
         } else if(ext==='pdf'){
           fileContent=await fileToBase64(threatFile);

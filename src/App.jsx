@@ -831,7 +831,22 @@ export default function GoliathonApp(){
       catch(e){alert("Could not convert this file: "+e.message);setProcessing(false);setProcessingMsg("");}
       return;
     }
-    const base64=await fileToBase64(file);await processEvidence(base64,file.name,file.type);
+    const isImg=['jpg','jpeg','png','gif','webp'].includes(ext);
+    if(isImg){
+      const resized=await new Promise(res=>{
+        const img=new Image();const url=URL.createObjectURL(file);
+        img.onload=()=>{
+          const scale=Math.min(1,1200/Math.max(img.width,img.height));
+          const canvas=document.createElement('canvas');
+          canvas.width=Math.round(img.width*scale);canvas.height=Math.round(img.height*scale);
+          canvas.getContext('2d').drawImage(img,0,0,canvas.width,canvas.height);
+          URL.revokeObjectURL(url);res(canvas.toDataURL('image/jpeg',0.82).split(',')[1]);
+        };img.src=url;
+      });
+      await processEvidence(resized,file.name,'image/jpeg');
+    } else {
+      const base64=await fileToBase64(file);await processEvidence(base64,file.name,file.type);
+    }
   },[processEvidence]);
 
   const handleUrl=useCallback(async()=>{

@@ -47,7 +47,7 @@ function markWelcomed(){try{localStorage.setItem(LS_WELCOMED,"1");}catch{}}
 function genId(){return Math.random().toString(36).substring(2,10)+Math.random().toString(36).substring(2,10);}
 function formatDate(iso){if(!iso)return"";try{return new Date(iso).toLocaleDateString("en-GB",{day:"numeric",month:"short",year:"numeric"});}catch{return iso;}}
 async function callClaude(messages){
-  const r=await fetch("/api/claude",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({model:"claude-sonnet-4-20250514",max_tokens:4000,system:SYSTEM,messages})});
+  const r=await fetch("/api/claude",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({model:"claude-sonnet-4-6",max_tokens:4000,system:SYSTEM,messages})});
   const d=await r.json();
   if(d.error||d.type==='error')throw new Error(d.error||d.error_message||'API error');
   return d.content?.[0]?.text||"";
@@ -854,7 +854,7 @@ export default function GoliathonApp(){
       imageContent.push({type:"text",text:"These are photographed pages of a physical document."});
       const existing=dossier?`\n\nExisting case:\nTitle: ${dossier.case_title}\nOverview: ${(dossier.overview||"").substring(0,400)}\nEvidence filed: ${(dossier.evidence||[]).length} items`:"\n\nThis is the FIRST piece of evidence.";
       const prompt=`${existing}\n\nAnalyse this photographed document (${cameraPages.length} pages) and return ONLY valid JSON:\n{"case_title":"short title","evidence_item":{"title":"title","date":"DD Mon YYYY or null","type":"Letter/Court Document/Medical/Financial/Other","summary":"2-3 sentence factual summary of what this document shows","facts_observed":"one sentence listing only what is directly stated or shown in the document — no interpretation","significance":"one sentence explaining why this matters to the case — clearly interpretive"},"timeline_entry":{"date":"DD Mon YYYY or null","event":"one sentence","evidence":"reference"},"overview_update":"updated overview","witness_update":"new sentences only","next_steps_update":"numbered 3-5 actions","key_questions_update":"updated list of 3-5 plain-language questions this case still needs to answer","decision_summary_update":"updated one-page decision-maker summary with the same structure as above"}`;
-      const res=await fetch("/api/claude",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({model:"claude-sonnet-4-20250514",max_tokens:4000,system:SYSTEM,messages:[{role:"user",content:[...imageContent,{type:"text",text:prompt}]}]})});
+      const res=await fetch("/api/claude",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({model:"claude-sonnet-4-6",max_tokens:4000,system:SYSTEM,messages:[{role:"user",content:[...imageContent,{type:"text",text:prompt}]}]})});
       const data=await res.json();const response=data.content?.[0]?.text||"";
       let parsed;try{parsed=JSON.parse(response.replace(/```json|```/g,"").trim());}catch{throw new Error("Could not parse AI response");}
       const current=dossier||{evidence:[],timeline:[],witness_statement:"",overview:"",next_steps:""};

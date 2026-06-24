@@ -2,6 +2,12 @@
   "rewrites": [
     { "source": "/(.*)", "destination": "/index.html" }
   ],
+  "crons": [
+    {
+      "path": "/api/keepalive",
+      "schedule": "0 8 * * *"
+    }
+  ],
   "headers": [
     {
       "source": "/index.html",

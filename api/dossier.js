@@ -24,9 +24,9 @@ export default async function handler(req, res) {
   }
 
   if (req.method === 'POST') {
-    const { share_id, case_title, overview, timeline, witness_statement, next_steps, evidence } = req.body;
+    const { burden_of_proof_letter, ...fields } = req.body;
     const { data, error } = await supabase.from('dossiers').upsert(
-      { share_id, case_title, overview, timeline, witness_statement, next_steps, evidence, updated_at: new Date().toISOString() },
+      { ...fields, updated_at: new Date().toISOString() },
       { onConflict: 'share_id' }
     ).select().single();
     if (error) return res.status(500).json({ error: error.message });

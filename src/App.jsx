@@ -593,6 +593,7 @@ export default function GoliathonApp(){
   const [editingTitle,setEditingTitle]=useState(false);
   const [titleDraft,setTitleDraft]=useState("");
   const [saved,setSaved]=useState(false);
+  const [saveFailed,setSaveFailed]=useState(false);
   const isSavedRef=useRef(false);
   const fileRef=useRef(null);
   const restoreRef=useRef(null);
@@ -609,10 +610,10 @@ export default function GoliathonApp(){
 
   const updateDossier=useCallback(async(newDossier)=>{
     const updated=cases.map(c=>c.id===activeId?{...c,dossier:newDossier,title:newDossier.case_title||c.title}:c);
-    updateCases(updated);setSaved(false);
+    updateCases(updated);setSaved(false);setSaveFailed(false);
     const {burden_of_proof_letter:_bpl,...dossierForDb}=newDossier;
     try{await saveDossierToDb({...dossierForDb,share_id:shareId},isSavedRef.current);isSavedRef.current=true;setSaved(true);}
-    catch(e){console.error("Save error:",e);}
+    catch(e){console.error("Save error:",e);setSaveFailed(true);}
   },[cases,activeId,shareId,updateCases]);
 
   const handleNewCase=useCallback(()=>{
@@ -902,11 +903,15 @@ export default function GoliathonApp(){
         </div>
         <div style={{display:"flex",gap:6,marginBottom:10,flexWrap:"wrap",alignItems:"center"}}>
           {saved&&<Tag color="#7e9e82">✓ Saved</Tag>}
+          {saveFailed&&<Tag color="#e57373">⚠ Not saved to cloud — sharing may not work. Try Save again.</Tag>}
           <Btn small variant="subtle" onClick={handleSaveLocal}>💾 Save</Btn>
           <label style={{cursor:"pointer"}}><Btn small variant="subtle" onClick={()=>restoreRef.current?.click()}>📂 Restore</Btn><input ref={restoreRef} type="file" accept=".json" style={{display:"none"}} onChange={handleRestoreLocal}/></label>
           {dossier&&<Btn small variant="subtle" onClick={handleReset}>↺ Reset</Btn>}
           {dossier&&<Btn small danger onClick={handleDeleteDossier}>🗑 Delete</Btn>}
-          {dossier&&<Btn small variant="ghost" onClick={()=>setShowShare(true)}>🔗 Share</Btn>}
+          {dossier&&<Btn small variant="ghost" onClick={async()=>{
+            try{const {burden_of_proof_letter:_bpl,...dForDb}=dossier;await saveDossierToDb({...dForDb,share_id:shareId},isSavedRef.current);isSavedRef.current=true;setSaved(true);setSaveFailed(false);setShowShare(true);}
+            catch(e){setSaveFailed(true);alert("Could not save to the cloud before sharing. Please check your connection and try again.\n\n"+e.message);}
+          }}>🔗 Share</Btn>}
           {dossier&&<Btn small onClick={()=>setShowDownload(true)}>↓ Download</Btn>}
         </div>
       </div>

@@ -213,8 +213,8 @@ async function downloadPdf(sectionKey,dossier){
     statement:{title:"Witness Statement",data:()=>[{type:"body",text:dossier.witness_statement||"No statement available."}]},
     evidence:{title:`Evidence Library — ${(dossier.evidence||[]).length} Items`,data:()=>(dossier.evidence||[]).map((e,i)=>({type:"evidence",num:i+1,title:e.title,date:e.date,docType:e.type,summary:e.summary,factsObserved:e.facts_observed,significance:e.significance,redFlags:e.red_flags}))},
     nextsteps:{title:"Next Steps",data:()=>[{type:"body",text:dossier.next_steps||"No next steps available."}]},
-    keyquestions:{title:"Key Questions in This Case",data:()=>[{type:"body",text:dossier.key_questions||"No key questions identified yet."}]},
-    decisionsummary:{title:"Decision-Maker Summary",data:()=>[{type:"body",text:dossier.decision_summary||"Decision-Maker Summary not yet generated."}]},
+    keyquestions:{title:"Key Questions in This Case",data:()=>[{type:"body",text:(dossier.key_questions||"No key questions identified yet.")+"\n\n"+AI_DISCLAIMER_PDF_TEXT}]},
+    decisionsummary:{title:"Decision-Maker Summary",data:()=>[{type:"body",text:(dossier.decision_summary||"Decision-Maker Summary not yet generated.")+"\n\n"+AI_DISCLAIMER_PDF_TEXT}]},
     complete:{title:"Complete Evidence Dossier",data:()=>{
       const items=[];
       items.push({type:"sectionHeader",title:"Case Overview"});
@@ -227,8 +227,8 @@ async function downloadPdf(sectionKey,dossier){
       (dossier.evidence||[]).forEach((e,i)=>items.push({type:"evidence",num:i+1,title:e.title,date:e.date,docType:e.type,summary:e.summary,factsObserved:e.facts_observed,significance:e.significance,redFlags:e.red_flags}));
       items.push({type:"sectionHeader",title:"Next Steps"});
       items.push({type:"body",text:dossier.next_steps||""});
-      if(dossier.decision_summary){items.push({type:"sectionHeader",title:"Decision-Maker Summary"});items.push({type:"body",text:dossier.decision_summary});}
-      if(dossier.key_questions){items.push({type:"sectionHeader",title:"Key Questions in This Case"});items.push({type:"body",text:dossier.key_questions});}
+      if(dossier.decision_summary){items.push({type:"sectionHeader",title:"Decision-Maker Summary"});items.push({type:"body",text:dossier.decision_summary+"\n\n"+AI_DISCLAIMER_PDF_TEXT});}
+      if(dossier.key_questions){items.push({type:"sectionHeader",title:"Key Questions in This Case"});items.push({type:"body",text:dossier.key_questions+"\n\n"+AI_DISCLAIMER_PDF_TEXT});}
       return items;
     }},
   };
@@ -411,6 +411,8 @@ function Btn({children,onClick,disabled,variant="primary",small=false,fullWidth=
   return <button onClick={onClick} disabled={disabled} style={{...base,...v,width:fullWidth?"100%":"auto"}}>{children}</button>;
 }
 function Panel({title,icon,children,action}){return(<div style={{background:PANEL,border:`1px solid ${BORDER}`,borderRadius:12,overflow:"hidden",marginBottom:16}}><div style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"14px 20px",borderBottom:`1px solid ${BORDER}`,background:"#001e3d"}}><div style={{display:"flex",alignItems:"center",gap:10}}><span style={{fontSize:18}}>{icon}</span><span style={{fontFamily:"'Poppins', sans-serif",fontWeight:700,fontSize:14,color:WHITE}}>{title}</span></div>{action}</div><div style={{padding:20}}>{children}</div></div>);}
+const AI_DISCLAIMER_PDF_TEXT="This is Goliathon's interpretation, not a legal or factual finding. Check it against your evidence and correct anything that is wrong before relying on it.";
+function AIDisclaimer({compact}){return(<p style={{margin:compact?"6px 0 0":"10px 0 0",fontSize:compact?10:11,color:"#5a7a96",lineHeight:1.5,fontStyle:"italic"}}>⚠ This is Goliathon's interpretation, not a legal or factual finding. Check it against your evidence — if anything is wrong, correct it before relying on it.</p>);}
 function Tag({children,color=YELLOW}){return<span style={{background:color+"20",color,border:`1px solid ${color}40`,borderRadius:20,padding:"2px 10px",fontSize:11,fontWeight:600,fontFamily:"'Poppins', sans-serif"}}>{children}</span>;}
 function EmptyState({text}){return<p style={{color:"#5a7a96",fontSize:13,fontStyle:"italic",margin:0}}>{text}</p>;}
 
@@ -472,12 +474,63 @@ function EditEvidenceModal({item,index,onSave,onDelete,onClose}){
   const [summary,setSummary]=useState(item.summary||"");
   const [factsObserved,setFactsObserved]=useState(item.facts_observed||"");
   const [significance,setSignificance]=useState(item.significance||"");
+  const [showCorrection,setShowCorrection]=useState(false);
+  const [correctionText,setCorrectionText]=useState("");
+  const [correcting,setCorrecting]=useState(false);
+  const [correctionError,setCorrectionError]=useState("");
   const field=(val,set,label)=>(<div style={{marginBottom:12}}><label style={{fontSize:11,color:"#a0b4c8",letterSpacing:1,textTransform:"uppercase",fontFamily:"'Poppins', sans-serif",display:"block",marginBottom:3}}>{label}</label>{label==="Summary"?<textarea value={val} onChange={e=>set(e.target.value)} rows={3} style={{width:"100%",background:"#001e3d",border:`1px solid ${BORDER}`,borderRadius:6,padding:"7px 10px",color:LIGHT,fontSize:13,outline:"none",fontFamily:"'Open Sans', sans-serif",resize:"vertical",boxSizing:"border-box"}}/>:<input value={val} onChange={e=>set(e.target.value)} style={{width:"100%",background:"#001e3d",border:`1px solid ${BORDER}`,borderRadius:6,padding:"7px 10px",color:LIGHT,fontSize:13,outline:"none",fontFamily:"'Open Sans', sans-serif",boxSizing:"border-box"}}/>}</div>);
+
+  async function handleRequestCorrection(){
+    if(!correctionText.trim())return;
+    setCorrecting(true);setCorrectionError("");
+    try{
+      const prompt=`An evidence item in a case dossier has an inaccurate or wrong analysis. Correct it.
+
+Current title: ${title}
+Current summary: ${summary}
+Current "what this shows" (facts): ${factsObserved}
+Current "why it matters" (interpretation): ${significance}
+
+The person reviewing this says the above is wrong. Their correction:
+"${correctionText}"
+
+Re-analyse this evidence item using the person's correction as the accurate position. Discard any part of the previous analysis that conflicts with the correction. Separate facts from interpretation strictly: "facts_observed" must contain ONLY what is now known to be factually/legally correct, with no speculation. "significance" must contain interpretation only, clearly flagged as such, and must not restate something as fact if it is actually contested or uncertain.
+
+Return ONLY valid JSON, no preamble or markdown:
+{"summary":"2-3 sentence corrected summary","facts_observed":"one sentence, corrected facts only — no interpretation","significance":"one sentence, corrected interpretation only — clearly distinguishable from fact"}`;
+      const text=await callClaude([{role:"user",content:prompt}]);
+      const clean=text.replace(/```json|```/g,"").trim();
+      const parsed=JSON.parse(clean);
+      if(parsed.summary)setSummary(parsed.summary);
+      if(parsed.facts_observed)setFactsObserved(parsed.facts_observed);
+      if(parsed.significance)setSignificance(parsed.significance);
+      setShowCorrection(false);setCorrectionText("");
+    }catch(e){setCorrectionError("Could not re-analyse: "+(e.message||"unknown error")+". You can still edit the fields above directly.");}
+    setCorrecting(false);
+  }
+
   return(<div style={{position:"fixed",inset:0,background:"#000000cc",display:"flex",alignItems:"center",justifyContent:"center",zIndex:1000}}>
     <div style={{background:PANEL,border:`1px solid ${BORDER}`,borderRadius:16,padding:26,maxWidth:480,width:"90%",maxHeight:"90vh",overflowY:"auto"}}>
       <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:18}}><h3 style={{margin:0,fontFamily:"'Poppins', sans-serif",color:WHITE,fontSize:16,fontWeight:700}}>Edit Evidence #{String(index+1).padStart(3,"0")}</h3><Btn small variant="subtle" onClick={onClose}>✕</Btn></div>
+
+      {!showCorrection&&<div style={{background:"#ffc72c14",border:"1px solid #ffc72c40",borderRadius:8,padding:"10px 12px",marginBottom:16}}>
+        <p style={{margin:"0 0 8px",fontSize:12,color:"#c8dae6",lineHeight:1.6}}>Is the analysis below wrong? You can edit the fields directly, or tell Goliathon what's incorrect and have it redo the analysis.</p>
+        <Btn small variant="subtle" onClick={()=>setShowCorrection(true)}>⟲ This is wrong — re-analyse with correction</Btn>
+      </div>}
+
+      {showCorrection&&<div style={{background:"#001e3d",border:`1px solid ${BORDER}`,borderRadius:8,padding:"12px 14px",marginBottom:16}}>
+        <label style={{fontSize:11,color:"#a0b4c8",letterSpacing:1,textTransform:"uppercase",fontFamily:"'Poppins', sans-serif",display:"block",marginBottom:6}}>What's wrong, and what's the correct position?</label>
+        <textarea value={correctionText} onChange={e=>setCorrectionText(e.target.value)} rows={4} placeholder='e.g. "Please do not assume X. The correct position is Y. The supporting evidence is document Z, page A."' style={{width:"100%",background:"#0a1929",border:`1px solid ${BORDER}`,borderRadius:6,padding:"8px 10px",color:LIGHT,fontSize:13,outline:"none",fontFamily:"'Open Sans', sans-serif",resize:"vertical",boxSizing:"border-box",marginBottom:10}}/>
+        {correctionError&&<p style={{margin:"0 0 10px",fontSize:12,color:"#e57373"}}>{correctionError}</p>}
+        <div style={{display:"flex",gap:8,justifyContent:"flex-end"}}>
+          <Btn small variant="subtle" onClick={()=>{setShowCorrection(false);setCorrectionText("");setCorrectionError("");}} disabled={correcting}>Cancel</Btn>
+          <Btn small onClick={handleRequestCorrection} disabled={correcting||!correctionText.trim()}>{correcting?"Re-analysing…":"Re-analyse"}</Btn>
+        </div>
+      </div>}
+
       {field(title,setTitle,"Title")}{field(date,setDate,"Date")}{field(type,setType,"Type")}{field(summary,setSummary,"Summary")}{field(factsObserved,setFactsObserved,"What This Shows")}{field(significance,setSignificance,"Why It Matters")}
-      <div style={{display:"flex",gap:8,justifyContent:"space-between",marginTop:8}}>
+      <AIDisclaimer/>
+      <div style={{display:"flex",gap:8,justifyContent:"space-between",marginTop:16}}>
         <Btn danger small onClick={()=>{if(window.confirm("Remove this item?"))onDelete(index);}}>🗑 Remove</Btn>
         <div style={{display:"flex",gap:8}}><Btn variant="subtle" small onClick={onClose}>Cancel</Btn><Btn small onClick={()=>onSave(index,{title,date,type,summary,facts_observed:factsObserved,significance})}>Save</Btn></div>
       </div>
@@ -525,10 +578,16 @@ function ReadOnlyDossier({dossier}){
       <Panel title="Case Overview" icon="📋">{dossier.overview?<p style={{margin:0,fontSize:14,lineHeight:1.8,color:LIGHT}}>{dossier.overview}</p>:<EmptyState text="No overview yet."/>}</Panel>
       <Panel title="Timeline" icon="📅">{!(dossier.timeline||[]).length?<EmptyState text="No timeline yet."/>:(dossier.timeline||[]).map((t,i)=>(<div key={i} style={{display:"flex",gap:12,marginBottom:12,paddingBottom:12,borderBottom:i<dossier.timeline.length-1?`1px solid ${BORDER}`:"none"}}><div style={{width:26,height:26,background:YELLOW,borderRadius:"50%",display:"flex",alignItems:"center",justifyContent:"center",fontFamily:"'Poppins', sans-serif",fontWeight:700,fontSize:11,color:NAVY,flexShrink:0}}>{i+1}</div><div><div style={{fontSize:11,color:YELLOW,fontWeight:600,marginBottom:2}}>{t.date||"Date unknown"}</div><div style={{fontSize:13,color:LIGHT,lineHeight:1.6}}>{t.event}</div></div></div>))}</Panel>
       <Panel title="Witness Statement" icon="📝">{dossier.witness_statement?<p style={{margin:0,fontSize:14,lineHeight:1.9,color:LIGHT,whiteSpace:"pre-wrap"}}>{dossier.witness_statement}</p>:<EmptyState text="No statement yet."/>}</Panel>
-      <Panel title={`Evidence Library — ${(dossier.evidence||[]).length} items`} icon="🗂️">{!(dossier.evidence||[]).length?<EmptyState text="No evidence yet."/>:(dossier.evidence||[]).map((e,i)=>(<div key={i} style={{background:"#001e3d",border:`1px solid ${BORDER}`,borderRadius:10,padding:13,marginBottom:9}}><div style={{display:"flex",alignItems:"center",gap:7,marginBottom:6,flexWrap:"wrap"}}><span style={{fontFamily:"'Poppins', sans-serif",fontWeight:700,fontSize:11,color:YELLOW}}>#{String(i+1).padStart(3,"0")}</span><span style={{fontFamily:"'Poppins', sans-serif",fontWeight:700,fontSize:13,color:WHITE,flex:1}}>{e.title}</span>{e.date&&<Tag>{e.date}</Tag>}{e.type&&<Tag color="#7a96b0">{e.type}</Tag>}</div><p style={{margin:"0 0 6px",fontSize:12,color:LIGHT,lineHeight:1.6}}>{e.summary}</p>{e.facts_observed&&<p style={{margin:"0 0 3px",fontSize:11,color:"#7a96b0"}}><span style={{fontWeight:600,textTransform:"uppercase",fontSize:10,letterSpacing:"0.05em"}}>What this shows: </span>{e.facts_observed}</p>}{e.significance&&<p style={{margin:0,fontSize:11,color:YELLOW}}><span style={{fontWeight:600,textTransform:"uppercase",fontSize:10,letterSpacing:"0.05em"}}>Why it matters: </span>{e.significance}</p>}</div>))}</Panel>
+      <Panel title={`Evidence Library — ${(dossier.evidence||[]).length} items`} icon="🗂️">{!(dossier.evidence||[]).length?<EmptyState text="No evidence yet."/>:(dossier.evidence||[]).map((e,i)=>(<div key={i} style={{background:"#001e3d",border:`1px solid ${BORDER}`,borderRadius:10,padding:13,marginBottom:9}}><div style={{display:"flex",alignItems:"center",gap:7,marginBottom:6,flexWrap:"wrap"}}><span style={{fontFamily:"'Poppins', sans-serif",fontWeight:700,fontSize:11,color:YELLOW}}>#{String(i+1).padStart(3,"0")}</span><span style={{fontFamily:"'Poppins', sans-serif",fontWeight:700,fontSize:13,color:WHITE,flex:1}}>{e.title}</span>{e.date&&<Tag>{e.date}</Tag>}{e.type&&<Tag color="#7a96b0">{e.type}</Tag>}</div><p style={{margin:"0 0 6px",fontSize:12,color:LIGHT,lineHeight:1.6}}>{e.summary}</p>{e.facts_observed&&<p style={{margin:"0 0 3px",fontSize:11,color:"#7a96b0"}}><span style={{fontWeight:600,textTransform:"uppercase",fontSize:10,letterSpacing:"0.05em"}}>What this shows: </span>{e.facts_observed}</p>}{e.significance&&<p style={{margin:0,fontSize:11,color:YELLOW}}><span style={{fontWeight:600,textTransform:"uppercase",fontSize:10,letterSpacing:"0.05em"}}>Why it matters: </span>{e.significance}</p>}{e.significance&&<AIDisclaimer compact/>}</div>))}</Panel>
       <Panel title="Next Steps" icon="📌">{dossier.next_steps?<p style={{margin:0,fontSize:14,lineHeight:1.8,color:LIGHT,whiteSpace:"pre-wrap"}}>{dossier.next_steps}</p>:<EmptyState text="No next steps yet."/>}</Panel>
-      <Panel title="Key Questions in This Case" icon="❓">{dossier.key_questions?<p style={{margin:0,fontSize:14,lineHeight:1.8,color:LIGHT,whiteSpace:"pre-wrap"}}>{cleanNumbering(dossier.key_questions)}</p>:<EmptyState text="Key questions will appear as you add evidence."/>}</Panel>
-      <Panel title="Decision-Maker Summary" icon="⚖️">{dossier.decision_summary?<p style={{margin:0,fontSize:14,lineHeight:1.8,color:LIGHT,whiteSpace:"pre-wrap"}}>{dossier.decision_summary}</p>:<EmptyState text="Decision-Maker Summary will appear after you add evidence. This is the one-page view for a judge, ombudsman, or regulator."/>}</Panel>
+      <Panel title="Key Questions in This Case" icon="❓">{dossier.key_questions?<>
+<p style={{margin:0,fontSize:14,lineHeight:1.8,color:LIGHT,whiteSpace:"pre-wrap"}}>{cleanNumbering(dossier.key_questions)}</p>
+<AIDisclaimer/>
+</>:<EmptyState text="Key questions will appear as you add evidence."/>}</Panel>
+      <Panel title="Decision-Maker Summary" icon="⚖️">{dossier.decision_summary?<>
+<p style={{margin:0,fontSize:14,lineHeight:1.8,color:LIGHT,whiteSpace:"pre-wrap"}}>{dossier.decision_summary}</p>
+<AIDisclaimer/>
+</>:<EmptyState text="Decision-Maker Summary will appear after you add evidence. This is the one-page view for a judge, ombudsman, or regulator."/>}</Panel>
     </div>
     {showDownload&&<DownloadModal dossier={dossier} onClose={()=>setShowDownload(false)}/>}
     <style>{`@keyframes pulse{0%,100%{opacity:.3;transform:scale(.8)}50%{opacity:1;transform:scale(1)}}`}</style>
@@ -1060,8 +1119,14 @@ export default function GoliathonApp(){
             <Panel title="Case Overview" icon="📋" action={<Btn small variant="ghost" onClick={()=>downloadPdf("overview",dossier)}>↓</Btn>}>{dossier.overview?<p style={{margin:0,fontSize:13,lineHeight:1.8,color:LIGHT}}>{dossier.overview}</p>:<EmptyState text="Building overview…"/>}</Panel>
             <Panel title="Witness Statement" icon="📝" action={<Btn small variant="ghost" onClick={()=>downloadPdf("statement",dossier)}>↓</Btn>}>{dossier.witness_statement?<p style={{margin:0,fontSize:13,lineHeight:1.9,color:LIGHT,whiteSpace:"pre-wrap"}}>{dossier.witness_statement}</p>:<EmptyState text="Building statement…"/>}</Panel>
             <Panel title="Next Steps" icon="📌" action={<Btn small variant="ghost" onClick={()=>downloadPdf("nextsteps",dossier)}>↓</Btn>}>{dossier.next_steps?<p style={{margin:0,fontSize:13,lineHeight:1.8,color:LIGHT,whiteSpace:"pre-wrap"}}>{dossier.next_steps}</p>:<EmptyState text="Next steps will appear here…"/>}</Panel>
-            <Panel title="Key Questions in This Case" icon="❓" action={<Btn small variant="ghost" onClick={()=>downloadPdf("keyquestions",dossier)}>↓</Btn>}>{dossier.key_questions?<p style={{margin:0,fontSize:13,lineHeight:1.8,color:LIGHT,whiteSpace:"pre-wrap"}}>{cleanNumbering(dossier.key_questions)}</p>:<EmptyState text="Key questions will appear as you add evidence."/>}</Panel>
-            <Panel title="Decision-Maker Summary" icon="⚖️" action={<Btn small variant="ghost" onClick={()=>downloadPdf("decisionsummary",dossier)}>↓</Btn>}>{dossier.decision_summary?<p style={{margin:0,fontSize:13,lineHeight:1.8,color:LIGHT,whiteSpace:"pre-wrap"}}>{dossier.decision_summary}</p>:<EmptyState text="Decision-Maker Summary will appear after you add evidence. This is the one-page view for a judge, ombudsman, or regulator."/>}</Panel>
+            <Panel title="Key Questions in This Case" icon="❓" action={<Btn small variant="ghost" onClick={()=>downloadPdf("keyquestions",dossier)}>↓</Btn>}>{dossier.key_questions?<>
+<p style={{margin:0,fontSize:13,lineHeight:1.8,color:LIGHT,whiteSpace:"pre-wrap"}}>{cleanNumbering(dossier.key_questions)}</p>
+<AIDisclaimer/>
+</>:<EmptyState text="Key questions will appear as you add evidence."/>}</Panel>
+            <Panel title="Decision-Maker Summary" icon="⚖️" action={<Btn small variant="ghost" onClick={()=>downloadPdf("decisionsummary",dossier)}>↓</Btn>}>{dossier.decision_summary?<>
+<p style={{margin:0,fontSize:13,lineHeight:1.8,color:LIGHT,whiteSpace:"pre-wrap"}}>{dossier.decision_summary}</p>
+<AIDisclaimer/>
+</>:<EmptyState text="Decision-Maker Summary will appear after you add evidence. This is the one-page view for a judge, ombudsman, or regulator."/>}</Panel>
             {dossier.burden_of_proof_letter&&<Panel title="Burden of Proof Challenge Letter" icon="✉️" action={<Btn small variant="ghost" onClick={()=>{const blob=new Blob([dossier.burden_of_proof_letter],{type:'text/plain'});const u=URL.createObjectURL(blob);const a=document.createElement('a');a.href=u;a.download='Challenge_Letter.txt';a.click();}}>↓</Btn>}><p style={{margin:"0 0 10px",fontSize:12,color:"#a0b4c8",lineHeight:1.6}}>This letter asks the claimant to prove their case before you are required to respond. Review, adapt if needed, then send by recorded post or email with read receipt.</p><p style={{margin:0,fontSize:13,lineHeight:1.8,color:LIGHT,whiteSpace:"pre-wrap",background:"#001830",padding:12,borderRadius:8,border:"1px solid #1e3a5f"}}>{dossier.burden_of_proof_letter}</p></Panel>}
           </div>
           <div>
@@ -1083,7 +1148,7 @@ export default function GoliathonApp(){
                   </div>
                   <div style={{display:"flex",gap:5,flexWrap:"wrap",marginBottom:5}}>{e.date&&<Tag>{e.date}</Tag>}{e.type&&<Tag color="#7a96b0">{e.type}</Tag>}</div>
                   <p style={{margin:"0 0 4px",fontSize:12,color:LIGHT,lineHeight:1.6}}>{e.summary}</p>
-                  {e.facts_observed&&<p style={{margin:"0 0 3px",fontSize:11,color:"#7a96b0"}}><span style={{fontWeight:600,textTransform:"uppercase",fontSize:10,letterSpacing:"0.05em"}}>What this shows: </span>{e.facts_observed}</p>}{e.significance&&<p style={{margin:0,fontSize:11,color:YELLOW}}><span style={{fontWeight:600,textTransform:"uppercase",fontSize:10,letterSpacing:"0.05em"}}>Why it matters: </span>{e.significance}</p>}
+                  {e.facts_observed&&<p style={{margin:"0 0 3px",fontSize:11,color:"#7a96b0"}}><span style={{fontWeight:600,textTransform:"uppercase",fontSize:10,letterSpacing:"0.05em"}}>What this shows: </span>{e.facts_observed}</p>}{e.significance&&<p style={{margin:0,fontSize:11,color:YELLOW}}><span style={{fontWeight:600,textTransform:"uppercase",fontSize:10,letterSpacing:"0.05em"}}>Why it matters: </span>{e.significance}</p>}{e.significance&&<AIDisclaimer compact/>}
                 </div>);
               })}
             </Panel>

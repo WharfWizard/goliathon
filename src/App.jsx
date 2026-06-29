@@ -538,6 +538,132 @@ Return ONLY valid JSON, no preamble or markdown:
   </div>);
 }
 
+function EditWitnessModal({text,onSave,onClose}){
+  const [value,setValue]=useState(text||"");
+  const [showCorrection,setShowCorrection]=useState(false);
+  const [correctionText,setCorrectionText]=useState("");
+  const [correcting,setCorrecting]=useState(false);
+  const [correctionError,setCorrectionError]=useState("");
+
+  async function handleRequestCorrection(){
+    if(!correctionText.trim())return;
+    setCorrecting(true);setCorrectionError("");
+    try{
+      const prompt=`A witness statement in a case dossier contains an inaccuracy. Correct it.
+
+Current witness statement:
+"${value}"
+
+The person says part of this is wrong. Their correction:
+"${correctionText}"
+
+Rewrite the witness statement applying this correction. Keep everything that is still accurate. Remove or fix only what the correction addresses. Keep it in first person, plain English, and keep roughly the same length and structure unless the correction requires otherwise.
+
+Return ONLY valid JSON, no preamble or markdown:
+{"witness_statement":"the corrected witness statement, complete, in first person"}`;
+      const responseText=await callClaude([{role:"user",content:prompt}]);
+      const clean=responseText.replace(/```json|```/g,"").trim();
+      const parsed=JSON.parse(clean);
+      if(parsed.witness_statement)setValue(parsed.witness_statement);
+      setShowCorrection(false);setCorrectionText("");
+    }catch(e){setCorrectionError("Could not re-analyse: "+(e.message||"unknown error")+". You can still edit the text above directly.");}
+    setCorrecting(false);
+  }
+
+  return(<div style={{position:"fixed",inset:0,background:"#000000cc",display:"flex",alignItems:"center",justifyContent:"center",zIndex:1000}}>
+    <div style={{background:PANEL,border:`1px solid ${BORDER}`,borderRadius:16,padding:26,maxWidth:520,width:"90%",maxHeight:"90vh",overflowY:"auto"}}>
+      <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:18}}><h3 style={{margin:0,fontFamily:"'Poppins', sans-serif",color:WHITE,fontSize:16,fontWeight:700}}>Edit Witness Statement</h3><Btn small variant="subtle" onClick={onClose}>✕</Btn></div>
+
+      {!showCorrection&&<div style={{background:"#ffc72c14",border:"1px solid #ffc72c40",borderRadius:8,padding:"10px 12px",marginBottom:16}}>
+        <p style={{margin:"0 0 8px",fontSize:12,color:"#c8dae6",lineHeight:1.6}}>Something inaccurate here? You can edit the text directly below, or tell Goliathon what's wrong and have it rewrite the statement.</p>
+        <Btn small variant="subtle" onClick={()=>setShowCorrection(true)}>⟲ This is wrong — re-analyse with correction</Btn>
+      </div>}
+
+      {showCorrection&&<div style={{background:"#001e3d",border:`1px solid ${BORDER}`,borderRadius:8,padding:"12px 14px",marginBottom:16}}>
+        <label style={{fontSize:11,color:"#a0b4c8",letterSpacing:1,textTransform:"uppercase",fontFamily:"'Poppins', sans-serif",display:"block",marginBottom:6}}>What's wrong, and what's the correct position?</label>
+        <textarea value={correctionText} onChange={e=>setCorrectionText(e.target.value)} rows={4} placeholder='e.g. "The description of the insurance policy is wrong. The correct position is..."' style={{width:"100%",background:"#0a1929",border:`1px solid ${BORDER}`,borderRadius:6,padding:"8px 10px",color:LIGHT,fontSize:13,outline:"none",fontFamily:"'Open Sans', sans-serif",resize:"vertical",boxSizing:"border-box",marginBottom:10}}/>
+        {correctionError&&<p style={{margin:"0 0 10px",fontSize:12,color:"#e57373"}}>{correctionError}</p>}
+        <div style={{display:"flex",gap:8,justifyContent:"flex-end"}}>
+          <Btn small variant="subtle" onClick={()=>{setShowCorrection(false);setCorrectionText("");setCorrectionError("");}} disabled={correcting}>Cancel</Btn>
+          <Btn small onClick={handleRequestCorrection} disabled={correcting||!correctionText.trim()}>{correcting?"Re-analysing…":"Re-analyse"}</Btn>
+        </div>
+      </div>}
+
+      <label style={{fontSize:11,color:"#a0b4c8",letterSpacing:1,textTransform:"uppercase",fontFamily:"'Poppins', sans-serif",display:"block",marginBottom:3}}>Witness Statement</label>
+      <textarea value={value} onChange={e=>setValue(e.target.value)} rows={10} style={{width:"100%",background:"#001e3d",border:`1px solid ${BORDER}`,borderRadius:6,padding:"9px 11px",color:LIGHT,fontSize:13,outline:"none",fontFamily:"'Open Sans', sans-serif",resize:"vertical",boxSizing:"border-box",lineHeight:1.6}}/>
+      <AIDisclaimer/>
+      <div style={{display:"flex",gap:8,justifyContent:"flex-end",marginTop:16}}>
+        <Btn variant="subtle" small onClick={onClose}>Cancel</Btn><Btn small onClick={()=>onSave(value)}>Save</Btn>
+      </div>
+    </div>
+  </div>);
+}
+
+function EditTimelineModal({item,index,onSave,onDelete,onClose}){
+  const [date,setDate]=useState(item.date||"");
+  const [event,setEvent]=useState(item.event||"");
+  const [evidenceRef,setEvidenceRef]=useState(item.evidence||"");
+  const [showCorrection,setShowCorrection]=useState(false);
+  const [correctionText,setCorrectionText]=useState("");
+  const [correcting,setCorrecting]=useState(false);
+  const [correctionError,setCorrectionError]=useState("");
+  const field=(val,set,label,rows)=>(<div style={{marginBottom:12}}><label style={{fontSize:11,color:"#a0b4c8",letterSpacing:1,textTransform:"uppercase",fontFamily:"'Poppins', sans-serif",display:"block",marginBottom:3}}>{label}</label>{rows?<textarea value={val} onChange={e=>set(e.target.value)} rows={rows} style={{width:"100%",background:"#001e3d",border:`1px solid ${BORDER}`,borderRadius:6,padding:"7px 10px",color:LIGHT,fontSize:13,outline:"none",fontFamily:"'Open Sans', sans-serif",resize:"vertical",boxSizing:"border-box"}}/>:<input value={val} onChange={e=>set(e.target.value)} style={{width:"100%",background:"#001e3d",border:`1px solid ${BORDER}`,borderRadius:6,padding:"7px 10px",color:LIGHT,fontSize:13,outline:"none",fontFamily:"'Open Sans', sans-serif",boxSizing:"border-box"}}/>}</div>);
+
+  async function handleRequestCorrection(){
+    if(!correctionText.trim())return;
+    setCorrecting(true);setCorrectionError("");
+    try{
+      const prompt=`A timeline entry in a case dossier is inaccurate. Correct it.
+
+Current date: ${date}
+Current event description: ${event}
+
+The person says this is wrong. Their correction:
+"${correctionText}"
+
+Rewrite the timeline entry applying this correction.
+
+Return ONLY valid JSON, no preamble or markdown:
+{"date":"corrected date, same format as before, or DD Mon YYYY","event":"corrected one-sentence event description"}`;
+      const responseText=await callClaude([{role:"user",content:prompt}]);
+      const clean=responseText.replace(/```json|```/g,"").trim();
+      const parsed=JSON.parse(clean);
+      if(parsed.date)setDate(parsed.date);
+      if(parsed.event)setEvent(parsed.event);
+      setShowCorrection(false);setCorrectionText("");
+    }catch(e){setCorrectionError("Could not re-analyse: "+(e.message||"unknown error")+". You can still edit the fields above directly.");}
+    setCorrecting(false);
+  }
+
+  return(<div style={{position:"fixed",inset:0,background:"#000000cc",display:"flex",alignItems:"center",justifyContent:"center",zIndex:1000}}>
+    <div style={{background:PANEL,border:`1px solid ${BORDER}`,borderRadius:16,padding:26,maxWidth:480,width:"90%",maxHeight:"90vh",overflowY:"auto"}}>
+      <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:18}}><h3 style={{margin:0,fontFamily:"'Poppins', sans-serif",color:WHITE,fontSize:16,fontWeight:700}}>Edit Timeline Entry #{String(index+1).padStart(3,"0")}</h3><Btn small variant="subtle" onClick={onClose}>✕</Btn></div>
+
+      {!showCorrection&&<div style={{background:"#ffc72c14",border:"1px solid #ffc72c40",borderRadius:8,padding:"10px 12px",marginBottom:16}}>
+        <p style={{margin:"0 0 8px",fontSize:12,color:"#c8dae6",lineHeight:1.6}}>Is this entry wrong? You can edit the fields directly, or tell Goliathon what's incorrect and have it redo it.</p>
+        <Btn small variant="subtle" onClick={()=>setShowCorrection(true)}>⟲ This is wrong — re-analyse with correction</Btn>
+      </div>}
+
+      {showCorrection&&<div style={{background:"#001e3d",border:`1px solid ${BORDER}`,borderRadius:8,padding:"12px 14px",marginBottom:16}}>
+        <label style={{fontSize:11,color:"#a0b4c8",letterSpacing:1,textTransform:"uppercase",fontFamily:"'Poppins', sans-serif",display:"block",marginBottom:6}}>What's wrong, and what's the correct position?</label>
+        <textarea value={correctionText} onChange={e=>setCorrectionText(e.target.value)} rows={4} placeholder='e.g. "This case law reference does not apply. The correct position is..."' style={{width:"100%",background:"#0a1929",border:`1px solid ${BORDER}`,borderRadius:6,padding:"8px 10px",color:LIGHT,fontSize:13,outline:"none",fontFamily:"'Open Sans', sans-serif",resize:"vertical",boxSizing:"border-box",marginBottom:10}}/>
+        {correctionError&&<p style={{margin:"0 0 10px",fontSize:12,color:"#e57373"}}>{correctionError}</p>}
+        <div style={{display:"flex",gap:8,justifyContent:"flex-end"}}>
+          <Btn small variant="subtle" onClick={()=>{setShowCorrection(false);setCorrectionText("");setCorrectionError("");}} disabled={correcting}>Cancel</Btn>
+          <Btn small onClick={handleRequestCorrection} disabled={correcting||!correctionText.trim()}>{correcting?"Re-analysing…":"Re-analyse"}</Btn>
+        </div>
+      </div>}
+
+      {field(date,setDate,"Date")}{field(event,setEvent,"Event",3)}{field(evidenceRef,setEvidenceRef,"Evidence Reference")}
+      <AIDisclaimer/>
+      <div style={{display:"flex",gap:8,justifyContent:"space-between",marginTop:16}}>
+        <Btn danger small onClick={()=>{if(window.confirm("Remove this timeline entry?"))onDelete(index);}}>🗑 Remove</Btn>
+        <div style={{display:"flex",gap:8}}><Btn variant="subtle" small onClick={onClose}>Cancel</Btn><Btn small onClick={()=>onSave(index,{date,event,evidence:evidenceRef})}>Save</Btn></div>
+      </div>
+    </div>
+  </div>);
+}
+
 function ShareModal({shareId,onClose}){
   const url=`${window.location.origin}/dossier/${shareId}`;
   const [copied,setCopied]=useState(false);
@@ -649,6 +775,8 @@ export default function GoliathonApp(){
   const [cameraPages,setCameraPages]=useState([]);
   const [cameraProcessing,setCameraProcessing]=useState(false);
   const [editingEvidence,setEditingEvidence]=useState(null);
+  const [editingTimeline,setEditingTimeline]=useState(null);
+  const [editingWitness,setEditingWitness]=useState(false);
   const [editingTitle,setEditingTitle]=useState(false);
   const [titleDraft,setTitleDraft]=useState("");
   const [saved,setSaved]=useState(false);
@@ -734,6 +862,21 @@ export default function GoliathonApp(){
   const handleDeleteEvidence=useCallback((index)=>{
     if(!dossier)return;const newEvidence=(dossier.evidence||[]).filter((_,i)=>i!==index);
     updateDossier({...dossier,evidence:newEvidence});setEditingEvidence(null);
+  },[dossier,updateDossier]);
+
+  const handleEditTimeline=useCallback((index,updated)=>{
+    if(!dossier)return;const newTimeline=[...(dossier.timeline||[])];newTimeline[index]={...newTimeline[index],...updated};
+    updateDossier({...dossier,timeline:newTimeline});setEditingTimeline(null);
+  },[dossier,updateDossier]);
+
+  const handleDeleteTimeline=useCallback((index)=>{
+    if(!dossier)return;const newTimeline=(dossier.timeline||[]).filter((_,i)=>i!==index);
+    updateDossier({...dossier,timeline:newTimeline});setEditingTimeline(null);
+  },[dossier,updateDossier]);
+
+  const handleEditWitness=useCallback((newText)=>{
+    if(!dossier)return;
+    updateDossier({...dossier,witness_statement:newText});setEditingWitness(false);
   },[dossier,updateDossier]);
 
   const handleMoveEvidence=useCallback((index,dir)=>{
@@ -1117,7 +1260,7 @@ export default function GoliathonApp(){
         <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit, minmax(300px, 1fr))",gap:16}}>
           <div>
             <Panel title="Case Overview" icon="📋" action={<Btn small variant="ghost" onClick={()=>downloadPdf("overview",dossier)}>↓</Btn>}>{dossier.overview?<p style={{margin:0,fontSize:13,lineHeight:1.8,color:LIGHT}}>{dossier.overview}</p>:<EmptyState text="Building overview…"/>}</Panel>
-            <Panel title="Witness Statement" icon="📝" action={<Btn small variant="ghost" onClick={()=>downloadPdf("statement",dossier)}>↓</Btn>}>{dossier.witness_statement?<p style={{margin:0,fontSize:13,lineHeight:1.9,color:LIGHT,whiteSpace:"pre-wrap"}}>{dossier.witness_statement}</p>:<EmptyState text="Building statement…"/>}</Panel>
+            <Panel title="Witness Statement" icon="📝" action={<div style={{display:"flex",gap:6}}><Btn small variant="ghost" onClick={()=>setEditingWitness(true)}>✏</Btn><Btn small variant="ghost" onClick={()=>downloadPdf("statement",dossier)}>↓</Btn></div>}>{dossier.witness_statement?<p style={{margin:0,fontSize:13,lineHeight:1.9,color:LIGHT,whiteSpace:"pre-wrap"}}>{dossier.witness_statement}</p>:<EmptyState text="Building statement…"/>}</Panel>
             <Panel title="Next Steps" icon="📌" action={<Btn small variant="ghost" onClick={()=>downloadPdf("nextsteps",dossier)}>↓</Btn>}>{dossier.next_steps?<p style={{margin:0,fontSize:13,lineHeight:1.8,color:LIGHT,whiteSpace:"pre-wrap"}}>{dossier.next_steps}</p>:<EmptyState text="Next steps will appear here…"/>}</Panel>
             <Panel title="Key Questions in This Case" icon="❓" action={<Btn small variant="ghost" onClick={()=>downloadPdf("keyquestions",dossier)}>↓</Btn>}>{dossier.key_questions?<>
 <p style={{margin:0,fontSize:13,lineHeight:1.8,color:LIGHT,whiteSpace:"pre-wrap"}}>{cleanNumbering(dossier.key_questions)}</p>
@@ -1131,7 +1274,7 @@ export default function GoliathonApp(){
           </div>
           <div>
             <Panel title="Timeline" icon="📅" action={<Btn small variant="ghost" onClick={()=>downloadPdf("timeline",dossier)}>↓</Btn>}>
-              {!(dossier.timeline||[]).length?<EmptyState text="Timeline building…"/>:(dossier.timeline||[]).map((t,i)=>(<div key={i} style={{display:"flex",gap:10,marginBottom:11,paddingBottom:11,borderBottom:i<dossier.timeline.length-1?`1px solid ${BORDER}`:"none"}}><div style={{width:24,height:24,background:YELLOW,borderRadius:"50%",display:"flex",alignItems:"center",justifyContent:"center",fontFamily:"'Poppins', sans-serif",fontWeight:700,fontSize:10,color:NAVY,flexShrink:0}}>{i+1}</div><div><div style={{fontSize:11,color:YELLOW,fontWeight:600,marginBottom:2}}>{t.date||"Date unknown"}</div><div style={{fontSize:13,color:LIGHT,lineHeight:1.6}}>{t.event}</div></div></div>))}
+              {!(dossier.timeline||[]).length?<EmptyState text="Timeline building…"/>:(dossier.timeline||[]).map((t,i)=>(<div key={i} style={{display:"flex",gap:10,marginBottom:11,paddingBottom:11,borderBottom:i<dossier.timeline.length-1?`1px solid ${BORDER}`:"none"}}><div style={{width:24,height:24,background:YELLOW,borderRadius:"50%",display:"flex",alignItems:"center",justifyContent:"center",fontFamily:"'Poppins', sans-serif",fontWeight:700,fontSize:10,color:NAVY,flexShrink:0}}>{i+1}</div><div style={{flex:1}}><div style={{display:"flex",alignItems:"flex-start",justifyContent:"space-between",gap:8}}><div style={{fontSize:11,color:YELLOW,fontWeight:600,marginBottom:2}}>{t.date||"Date unknown"}</div><button onClick={()=>setEditingTimeline(i)} style={{background:"none",border:`1px solid ${BORDER}`,borderRadius:4,padding:"2px 7px",color:YELLOW,fontSize:10,cursor:"pointer",flexShrink:0}}>✏</button></div><div style={{fontSize:13,color:LIGHT,lineHeight:1.6}}>{t.event}</div></div></div>))}
             </Panel>
             <Panel title={`Evidence Library — ${evidenceCount} item${evidenceCount!==1?"s":""}`} icon="🗂️" action={<Btn small variant="ghost" onClick={()=>downloadPdf("evidence",dossier)}>↓</Btn>}>
               {!evidenceCount?<EmptyState text="No evidence uploaded yet."/>:[...(dossier.evidence||[])].reverse().map((e,i)=>{
@@ -1182,6 +1325,8 @@ export default function GoliathonApp(){
     {showShare&&<ShareModal shareId={shareId} onClose={()=>setShowShare(false)}/>}
     {showDownload&&dossier&&<DownloadModal dossier={dossier} onClose={()=>setShowDownload(false)}/>}
     {editingEvidence!==null&&dossier?.evidence?.[editingEvidence]&&(<EditEvidenceModal item={dossier.evidence[editingEvidence]} index={editingEvidence} onSave={handleEditEvidence} onDelete={handleDeleteEvidence} onClose={()=>setEditingEvidence(null)}/>)}
+    {editingTimeline!==null&&dossier?.timeline?.[editingTimeline]&&(<EditTimelineModal item={dossier.timeline[editingTimeline]} index={editingTimeline} onSave={handleEditTimeline} onDelete={handleDeleteTimeline} onClose={()=>setEditingTimeline(null)}/>)}
+    {editingWitness&&dossier&&(<EditWitnessModal text={dossier.witness_statement} onSave={handleEditWitness} onClose={()=>setEditingWitness(false)}/>)}
 
     <style>{`@keyframes pulse{0%,100%{opacity:.3;transform:scale(.8)}50%{opacity:1;transform:scale(1)}}*{box-sizing:border-box}::-webkit-scrollbar{width:6px}::-webkit-scrollbar-track{background:#001e3d}::-webkit-scrollbar-thumb{background:${YELLOW}40;border-radius:3px}input::placeholder,textarea::placeholder{color:#5a7a96}`}</style>
   </div>);

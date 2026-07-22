@@ -688,6 +688,8 @@ function DownloadModal({dossier,onClose}){
     {label:"Witness Statement",desc:"First-person account",icon:"📝",action:()=>downloadPdf("statement",dossier)},
     {label:"Evidence Library",desc:"All items with cover notes",icon:"🗂️",action:()=>downloadPdf("evidence",dossier)},
     {label:"Next Steps",desc:"Priority actions",icon:"📌",action:()=>downloadPdf("nextsteps",dossier)},
+    {label:"Key Questions",desc:"What this case still needs to answer",icon:"❓",action:()=>downloadPdf("keyquestions",dossier)},
+    {label:"What They Will Likely Argue",desc:"Institution's probable counter-position",icon:"⚔️",action:()=>downloadPdf("institutionresponse",dossier)},
   ];
   return(<div style={{position:"fixed",inset:0,background:"#000000cc",display:"flex",alignItems:"center",justifyContent:"center",zIndex:1000}}>
     <div style={{background:PANEL,border:`1px solid ${BORDER}`,borderRadius:16,padding:24,maxWidth:460,width:"90%",maxHeight:"90vh",overflowY:"auto"}}>

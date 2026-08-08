@@ -786,6 +786,28 @@ export default function GoliathonApp(){
   const [saved,setSaved]=useState(false);
   const [saveFailed,setSaveFailed]=useState(false);
   const isSavedRef=useRef(false);
+
+  // Check DB for existing save on mount — if this case already exists in
+  // Supabase (from a previous session, before a refresh wiped local React
+  // state), mark it as saved so the Chat panel and other saved-only UI
+  // don't wrongly imply the case is unsaved.
+  useEffect(()=>{
+    if(!shareId)return;
+    let cancelled=false;
+    (async()=>{
+      try{
+        const existing=await loadDossierFromDb(shareId);
+        if(!cancelled&&existing){
+          isSavedRef.current=true;
+          setSaved(true);
+        }
+      }catch{
+        // Silently ignore — if the check fails, the user can still save
+        // manually as before; this is a convenience check, not required.
+      }
+    })();
+    return ()=>{cancelled=true;};
+  },[shareId]);
   const fileRef=useRef(null);
   const restoreRef=useRef(null);
   const cameraRef=useRef(null);

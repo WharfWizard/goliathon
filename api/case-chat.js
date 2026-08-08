@@ -17,7 +17,10 @@ export default async function handler(req, res) {
     return res.status(400).json({ error: 'caseId and message are required' });
   }
 
-  if (!process.env.SUPABASE_URL || !process.env.SUPABASE_ANON_KEY || !process.env.ANTHROPIC_API_KEY) {
+  // NOTE: the Anthropic key is stored in Vercel as VITE_ANTHROPIC_API_KEY
+  // (not ANTHROPIC_API_KEY) — matching whatever name api/claude.js expects,
+  // confirmed against the project's actual Environment Variables settings.
+  if (!process.env.SUPABASE_URL || !process.env.SUPABASE_ANON_KEY || !process.env.VITE_ANTHROPIC_API_KEY) {
     return res.status(500).json({ error: 'Missing required environment variables' });
   }
 
@@ -71,7 +74,7 @@ export default async function handler(req, res) {
       method: 'POST',
       headers: {
         'content-type': 'application/json',
-        'x-api-key': process.env.ANTHROPIC_API_KEY,
+        'x-api-key': process.env.VITE_ANTHROPIC_API_KEY,
         'anthropic-version': '2023-06-01',
       },
       body: JSON.stringify({

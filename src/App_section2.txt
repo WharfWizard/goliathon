@@ -1,0 +1,37 @@
+            </Panel>
+          </div>
+        </div>
+      )}
+    </div>
+
+    <div style={{borderTop:`1px solid ${BORDER}`,padding:"14px 20px",textAlign:"center",marginTop:20}}>
+      <div style={{marginBottom:10}}>
+        <button onClick={()=>setShowWelcome(true)} style={{background:"none",border:`1px solid ${BORDER}`,borderRadius:6,padding:"6px 16px",color:"#7a96b0",fontSize:12,cursor:"pointer",fontFamily:"'Poppins', sans-serif"}}>ℹ About Goliathon</button>
+      </div>
+      <p style={{margin:0,fontSize:11,color:"#5a7a96"}}>Goliathon · Get SAFE (Support After Financial Exploitation) · Founded by Steve Conley · Academy of Life Planning · <a href="https://www.get-safe.org.uk/" style={{color:"#7a96b0"}}>www.get-safe.org.uk</a> · <a href="/privacy" onClick={e=>{e.preventDefault();setShowPrivacy(true);window.history.pushState({},"","/privacy");}} style={{color:"#7a96b0"}}>Privacy Policy</a> · Educational use only. Not legal, financial, or mental-health advice.</p>
+    </div>
+
+    {showCamera&&(
+      <div style={{position:"fixed",inset:0,background:"#000000dd",display:"flex",alignItems:"center",justifyContent:"center",zIndex:1000}}>
+        <div style={{background:PANEL,border:`1px solid ${BORDER}`,borderRadius:16,padding:26,maxWidth:460,width:"90%",maxHeight:"90vh",overflowY:"auto"}}>
+          <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:14}}><h3 style={{margin:0,fontFamily:"'Poppins', sans-serif",color:WHITE,fontSize:16,fontWeight:700}}>📷 Camera Scan</h3><Btn small variant="subtle" onClick={()=>{setShowCamera(false);setCameraPages([]);}}>✕</Btn></div>
+          <p style={{color:"#7a96b0",fontSize:13,lineHeight:1.7,marginBottom:14}}>Photograph a physical document. Capture multiple pages — they will be analysed as a single evidence item.</p>
+          {cameraPages.length>0&&(<div style={{marginBottom:12}}><div style={{fontSize:11,color:YELLOW,marginBottom:6,fontFamily:"'Poppins', sans-serif",fontWeight:600}}>{cameraPages.length} page{cameraPages.length>1?"s":""} captured</div><div style={{display:"flex",gap:7,flexWrap:"wrap"}}>{cameraPages.map((p,i)=>(<div key={i} style={{position:"relative"}}><img src={p.preview} alt={`Page ${i+1}`} style={{width:68,height:85,objectFit:"cover",borderRadius:6,border:`1px solid ${BORDER}`}}/><div onClick={()=>setCameraPages(prev=>prev.filter((_,j)=>j!==i))} style={{position:"absolute",top:2,right:2,background:NAVY,borderRadius:"50%",width:15,height:15,display:"flex",alignItems:"center",justifyContent:"center",fontSize:9,color:YELLOW,cursor:"pointer",fontWeight:700}}>✕</div><div style={{fontSize:9,color:"#7a96b0",textAlign:"center",marginTop:2}}>Page {i+1}</div></div>))}</div></div>)}
+          <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
+            <Btn variant="subtle" small onClick={()=>cameraRef.current?.click()}>{cameraPages.length===0?"📷 Open Camera":"📷 Add Page"}</Btn>
+            {cameraPages.length>0&&<Btn small onClick={handleCameraSubmit} disabled={cameraProcessing}>{cameraProcessing?"Processing…":`Analyse ${cameraPages.length} Page${cameraPages.length>1?"s":""} →`}</Btn>}
+          </div>
+          <p style={{margin:"10px 0 0",fontSize:11,color:"#5a7a96"}}>Tip: Good lighting and steady hand give the best results.</p>
+        </div>
+      </div>
+    )}
+
+    {showShare&&<ShareModal shareId={shareId} onClose={()=>setShowShare(false)}/>}
+    {showDownload&&dossier&&<DownloadModal dossier={dossier} onClose={()=>setShowDownload(false)}/>}
+    {editingEvidence!==null&&dossier?.evidence?.[editingEvidence]&&(<EditEvidenceModal item={dossier.evidence[editingEvidence]} index={editingEvidence} onSave={handleEditEvidence} onDelete={handleDeleteEvidence} onClose={()=>setEditingEvidence(null)}/>)}
+    {editingTimeline!==null&&dossier?.timeline?.[editingTimeline]&&(<EditTimelineModal item={dossier.timeline[editingTimeline]} index={editingTimeline} onSave={handleEditTimeline} onDelete={handleDeleteTimeline} onClose={()=>setEditingTimeline(null)}/>)}
+    {editingWitness&&dossier&&(<EditWitnessModal text={dossier.witness_statement} onSave={handleEditWitness} onClose={()=>setEditingWitness(false)}/>)}
+
+    <style>{`@keyframes pulse{0%,100%{opacity:.3;transform:scale(.8)}50%{opacity:1;transform:scale(1)}}*{box-sizing:border-box}::-webkit-scrollbar{width:6px}::-webkit-scrollbar-track{background:#001e3d}::-webkit-scrollbar-thumb{background:${YELLOW}40;border-radius:3px}input::placeholder,textarea::placeholder{color:#5a7a96}`}</style>
+  </div>);
+}

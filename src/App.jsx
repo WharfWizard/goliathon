@@ -1,4 +1,5 @@
 import { useState, useRef, useCallback, useEffect } from "react";
+import CaseChat from "./components/CaseChat";
 
 if (!document.getElementById("goliathon-fonts")) {
   const link = document.createElement("link");
@@ -1299,6 +1300,12 @@ export default function GoliathonApp(){
                 </div>);
               })}
             </Panel>
+            {saved&&<Panel title="Chat With This Case" icon="💬">
+              <CaseChat caseId={shareId}/>
+            </Panel>}
+            {!saved&&dossier&&<Panel title="Chat With This Case" icon="💬">
+              <p style={{margin:0,fontSize:12,color:"#7a96b0",lineHeight:1.7}}>Save this case to start chatting with it.</p>
+            </Panel>}
           </div>
         </div>
       )}

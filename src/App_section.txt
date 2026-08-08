@@ -1,0 +1,181 @@
+        </div>
+      </div>
+    </div>
+
+    <div style={{maxWidth:1100,margin:"0 auto",padding:"16px"}}>
+      {dossier?.case_title&&(
+        <div style={{background:YELLOW+"15",border:`1px solid ${YELLOW}40`,borderRadius:12,padding:"12px 16px",marginBottom:14,display:"flex",alignItems:"center",gap:10}}>
+          {editingTitle?(
+            <div style={{display:"flex",gap:8,flex:1,alignItems:"center"}}>
+              <input value={titleDraft} onChange={e=>setTitleDraft(e.target.value)} onKeyDown={e=>e.key==="Enter"&&handleSaveTitle()} autoFocus style={{flex:1,background:"#001e3d",border:`1px solid ${BORDER}`,borderRadius:6,padding:"6px 10px",color:WHITE,fontSize:14,outline:"none",fontFamily:"'Poppins', sans-serif",fontWeight:700}}/>
+              <Btn small onClick={handleSaveTitle}>Save</Btn>
+              <Btn small variant="subtle" onClick={()=>setEditingTitle(false)}>Cancel</Btn>
+            </div>
+          ):(
+            <><div style={{flex:1}}><div style={{fontSize:9,letterSpacing:3,color:YELLOW,textTransform:"uppercase",fontFamily:"'Poppins', sans-serif",marginBottom:2}}>Case</div><h2 style={{margin:0,fontFamily:"'Poppins', sans-serif",fontSize:16,fontWeight:800,color:WHITE}}>{dossier.case_title}</h2></div><Tag>{evidenceCount} item{evidenceCount!==1?"s":""} filed</Tag><button onClick={()=>{setTitleDraft(dossier.case_title);setEditingTitle(true);}} style={{background:"none",border:`1px solid ${BORDER}`,borderRadius:6,padding:"4px 8px",color:"#7a96b0",fontSize:11,cursor:"pointer"}}>✏ Edit</button></>
+          )}
+        </div>
+      )}
+
+      {dossier&&<StrengthMeter dossier={dossier}/>}
+
+      {evidenceCount===0&&!processing&&!threatProcessing&&<div style={{background:"#ffc72c15",border:"1px solid #ffc72c40",borderRadius:10,padding:"12px 14px",marginBottom:14,textAlign:"left"}}>
+        <p style={{margin:"0 0 8px",fontFamily:"'Poppins', sans-serif",fontWeight:700,fontSize:13,color:WHITE}}>⚡ Just received a legal claim or threat?</p>
+        <p style={{margin:"0 0 10px",fontSize:12,color:"#a0b4c8",lineHeight:1.6}}>Start here. We will immediately identify what the claimant must prove and generate a challenge letter you can send today.</p>
+        <Btn small onClick={()=>setShowThreatIntake(true)}>Respond to a Legal Threat</Btn>
+      </div>}
+
+      <div onDragOver={e=>{e.preventDefault();setDragOver(true);}} onDragLeave={()=>setDragOver(false)} onDrop={e=>{e.preventDefault();setDragOver(false);handleFile(e.dataTransfer.files[0]);}} onClick={()=>!processing&&fileRef.current?.click()}
+        style={{border:`2px dashed ${dragOver?YELLOW:(processing||threatProcessing)?YELLOW+"60":BORDER}`,borderRadius:16,padding:"22px 14px",textAlign:"center",cursor:(processing||threatProcessing)?"not-allowed":"pointer",background:dragOver?"#001e3d":(processing||threatProcessing)?"#001830":"transparent",transition:"all 0.2s",marginBottom:18}}>
+        {(processing||threatProcessing)?(
+          <div><div style={{marginBottom:10}}><Spinner/></div><p style={{margin:0,fontFamily:"'Poppins', sans-serif",fontWeight:700,fontSize:15,color:YELLOW}}>{threatProcessing?"Generating your challenge…":processingMsg}</p><p style={{margin:"6px 0 0",fontSize:13,color:"#7a96b0"}}>{threatProcessing?"Identifying what they must prove and drafting your letter":"Goliathon is building your dossier…"}</p></div>
+        ):(
+          <div>
+            <div style={{fontSize:38,marginBottom:10}}>{evidenceCount===0?"⚖️":"➕"}</div>
+            <p style={{margin:"0 0 6px",fontFamily:"'Poppins', sans-serif",fontWeight:700,fontSize:15,color:WHITE}}>{evidenceCount===0?"Upload your first piece of evidence to begin":"Upload your next piece of evidence"}</p>
+            <p style={{margin:"0 0 14px",fontSize:13,color:"#7a96b0"}}>{evidenceCount===0?"Goliathon will build your case automatically":`${evidenceCount} item${evidenceCount!==1?"s":""} filed — keep adding to build your case`}</p>
+            <div style={{display:"flex",gap:8,justifyContent:"center",flexWrap:"wrap"}}>
+              <label onClick={e=>e.stopPropagation()} style={{cursor:"pointer",background:YELLOW,color:NAVY,borderRadius:8,fontFamily:"'Poppins',sans-serif",fontWeight:700,fontSize:12,padding:"7px 16px",display:"inline-flex",alignItems:"center",gap:6,whiteSpace:"nowrap",letterSpacing:0.5}}>📎 Upload File<input type="file" accept="image/*,.pdf,.txt,.html,.htm,.doc,.docx,.msg" style={{display:"none"}} onChange={e=>{if(e.target.files[0])handleFile(e.target.files[0]);}}/></label>
+              <Btn small variant="subtle" onClick={e=>{e.stopPropagation();setShowCamera(true);setCameraPages([]);}}>📷 Camera Scan</Btn>
+              <Btn small variant="subtle" onClick={e=>{e.stopPropagation();setShowUrl(true);}}>🔗 Add URL</Btn>
+              <Btn small variant="subtle" onClick={e=>{e.stopPropagation();setShowPasteText(true);}}>📝 Paste Text</Btn>
+            </div>
+            <p style={{margin:"10px 0 0",fontSize:11,color:"#5a7a96"}}>Accepts JPG, PNG, PDF, TXT, HTML, DOC, DOCX, MSG — or drag and drop a file here</p>
+          </div>
+        )}
+      </div>
+      <input ref={fileRef} type="file" accept="image/*,.pdf,.txt,.html,.htm,.doc,.docx,.msg" style={{display:"none"}} onChange={e=>handleFile(e.target.files[0])}/>
+      <input ref={cameraRef} type="file" accept="image/*" capture="environment" multiple style={{display:"none"}} onChange={handleCameraCapture}/>
+
+      {showThreatIntake&&(
+        <div style={{position:"fixed",inset:0,background:"rgba(0,20,40,0.92)",zIndex:200,display:"flex",alignItems:"center",justifyContent:"center",padding:20,overflowY:"auto"}} onClick={()=>setShowThreatIntake(false)}>
+          <div style={{background:"#0d2137",border:"1px solid #ffc72c60",borderRadius:16,padding:24,width:"100%",maxWidth:580}} onClick={e=>e.stopPropagation()}>
+            <h3 style={{margin:"0 0 6px",color:"#ffc72c",fontFamily:"'Poppins', sans-serif",fontSize:17}}>⚡ Respond to a Legal Claim or Threat</h3>
+            <p style={{margin:"0 0 18px",fontSize:12,color:"#7a96b0",lineHeight:1.7}}>Tell us about the claim you have received. We will identify what the claimant must prove and generate a challenge letter you can send today — before you are required to respond.</p>
+
+            <label style={{display:"block",fontSize:11,color:"#7a96b0",marginBottom:4,textTransform:"uppercase",letterSpacing:"0.05em"}}>Who is claiming against you?</label>
+            <input value={threatForm.claimant} onChange={e=>setThreatForm(f=>({...f,claimant:e.target.value}))} placeholder="e.g. Barclays Bank PLC, Halifax, a debt collector…" style={{width:"100%",boxSizing:"border-box",background:"#0a1929",border:"1px solid #1e3a5f",borderRadius:8,padding:"8px 10px",color:"#c8dae6",fontSize:13,marginBottom:12}}/>
+
+            <label style={{display:"block",fontSize:11,color:"#7a96b0",marginBottom:4,textTransform:"uppercase",letterSpacing:"0.05em"}}>Type of claim</label>
+            <select value={threatForm.claimType} onChange={e=>setThreatForm(f=>({...f,claimType:e.target.value}))} style={{width:"100%",boxSizing:"border-box",background:"#0a1929",border:"1px solid #1e3a5f",borderRadius:8,padding:"8px 10px",color:"#c8dae6",fontSize:13,marginBottom:12}}>
+              <option>mortgage possession</option>
+              <option>debt claim</option>
+              <option>county court judgment</option>
+              <option>letter before action</option>
+              <option>charging order</option>
+              <option>bankruptcy petition</option>
+              <option>other legal threat</option>
+            </select>
+
+            <div style={{display:"flex",gap:10,marginBottom:12}}>
+              <div style={{flex:1}}>
+                <label style={{display:"block",fontSize:11,color:"#7a96b0",marginBottom:4,textTransform:"uppercase",letterSpacing:"0.05em"}}>Amount claimed</label>
+                <input value={threatForm.amount} onChange={e=>setThreatForm(f=>({...f,amount:e.target.value}))} placeholder="e.g. £7,502.13" style={{width:"100%",boxSizing:"border-box",background:"#0a1929",border:"1px solid #1e3a5f",borderRadius:8,padding:"8px 10px",color:"#c8dae6",fontSize:13}}/>
+              </div>
+              <div style={{flex:1}}>
+                <label style={{display:"block",fontSize:11,color:"#7a96b0",marginBottom:4,textTransform:"uppercase",letterSpacing:"0.05em"}}>Response deadline</label>
+                <input value={threatForm.deadline} onChange={e=>setThreatForm(f=>({...f,deadline:e.target.value}))} placeholder="e.g. 14 days, 9 Dec 2025" style={{width:"100%",boxSizing:"border-box",background:"#0a1929",border:"1px solid #1e3a5f",borderRadius:8,padding:"8px 10px",color:"#c8dae6",fontSize:13}}/>
+              </div>
+            </div>
+
+            <label style={{display:"block",fontSize:11,color:"#7a96b0",marginBottom:4,textTransform:"uppercase",letterSpacing:"0.05em"}}>Describe the claim in your own words</label>
+            <textarea value={threatForm.details} onChange={e=>setThreatForm(f=>({...f,details:e.target.value}))} placeholder="What are they claiming? What happened? What do you dispute?" rows={5} style={{width:"100%",boxSizing:"border-box",background:"#0a1929",border:"1px solid #1e3a5f",borderRadius:8,padding:"10px",color:"#c8dae6",fontSize:13,lineHeight:1.7,resize:"vertical",fontFamily:"inherit",marginBottom:16}}/>
+
+            <label style={{display:"block",fontSize:11,color:"#7a96b0",marginBottom:4,textTransform:"uppercase",letterSpacing:"0.05em"}}>Attach the letter or document (optional)</label>
+            <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:16}}>
+              <label style={{flex:1,background:"#0a1929",border:"1px solid #1e3a5f",borderRadius:8,padding:"8px 10px",color:threatFile?"#c8dae6":"#5a7a96",fontSize:12,cursor:"pointer",display:"block",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>
+                {threatFile?threatFile.name:"📎 Tap to attach photo or file of the letter…"}
+                <input ref={threatFileRef} type="file" accept="image/*,.pdf,.doc,.docx,.txt" style={{display:"none"}} onChange={e=>{if(e.target.files[0])setThreatFile(e.target.files[0]);}}/>
+              </label>
+              {threatFile&&<Btn small variant="subtle" onClick={()=>{setThreatFile(null);if(threatFileRef.current)threatFileRef.current.value="";}}>✕</Btn>}
+            </div>
+
+            <div style={{background:"#001830",border:"1px solid #1e3a5f",borderRadius:8,padding:"10px 12px",marginBottom:16}}>
+              <p style={{margin:0,fontSize:11,color:"#7a96b0",lineHeight:1.6}}>⚡ We will generate: five questions the claimant must answer · a challenge letter you can send today · your case overview · a Decision-Maker Summary{threatFile?" · full analysis of the attached document":""}</p>
+            </div>
+
+            <div style={{display:"flex",gap:8,justifyContent:"flex-end"}}>
+              <Btn small variant="subtle" onClick={()=>{setShowThreatIntake(false);setThreatFile(null);}}>Cancel</Btn>
+              <Btn small onClick={handleThreatIntake} disabled={!threatForm.claimant&&!threatFile}>Generate Challenge</Btn>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showPasteText&&(
+        <div style={{position:"fixed",inset:0,background:"rgba(0,20,40,0.85)",zIndex:200,display:"flex",alignItems:"center",justifyContent:"center",padding:20}} onClick={()=>setShowPasteText(false)}>
+          <div style={{background:"#0d2137",border:"1px solid #1e3a5f",borderRadius:16,padding:24,width:"100%",maxWidth:560}} onClick={e=>e.stopPropagation()}>
+            <h3 style={{margin:"0 0 16px",color:"#ffc72c",fontFamily:"'Poppins',sans-serif",fontSize:16}}>📝 Paste Text Entry</h3>
+            <p style={{margin:"0 0 14px",fontSize:12,color:"#7a96b0",lineHeight:1.6}}>Paste a file note, letter, email, or any written record. Give it a date and title so it appears correctly in your evidence register.</p>
+            <div style={{display:"flex",gap:10,marginBottom:10}}>
+              <div style={{flex:1}}>
+                <label style={{display:"block",fontSize:11,color:"#7a96b0",marginBottom:4,textTransform:"uppercase",letterSpacing:"0.05em"}}>Date (e.g. 2026_06_03)</label>
+                <input value={pasteTextDate} onChange={e=>setPasteTextDate(e.target.value)} placeholder="YYYY_MM_DD" style={{width:"100%",boxSizing:"border-box",background:"#0a1929",border:"1px solid #1e3a5f",borderRadius:8,padding:"8px 10px",color:"#c8dae6",fontSize:13,fontFamily:"monospace"}}/>
+              </div>
+              <div style={{flex:2}}>
+                <label style={{display:"block",fontSize:11,color:"#7a96b0",marginBottom:4,textTransform:"uppercase",letterSpacing:"0.05em"}}>Title / Description</label>
+                <input value={pasteTextTitle} onChange={e=>setPasteTextTitle(e.target.value)} placeholder="e.g. File Note: mortgage discharge" style={{width:"100%",boxSizing:"border-box",background:"#0a1929",border:"1px solid #1e3a5f",borderRadius:8,padding:"8px 10px",color:"#c8dae6",fontSize:13}}/>
+              </div>
+            </div>
+            <textarea value={pasteTextContent} onChange={e=>setPasteTextContent(e.target.value)} placeholder="Paste or type your text here…" rows={10} style={{width:"100%",boxSizing:"border-box",background:"#0a1929",border:"1px solid #1e3a5f",borderRadius:8,padding:"10px",color:"#c8dae6",fontSize:13,lineHeight:1.7,resize:"vertical",fontFamily:"inherit",marginBottom:14}}/>
+            <div style={{display:"flex",gap:8,justifyContent:"flex-end"}}>
+              <Btn small variant="subtle" onClick={()=>setShowPasteText(false)}>Cancel</Btn>
+              <Btn small onClick={handlePasteText} disabled={!pasteTextContent.trim()}>Analyse Entry</Btn>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showUrl&&(
+        <div style={{background:PANEL,border:`1px solid ${BORDER}`,borderRadius:12,padding:16,marginBottom:18}}>
+          <p style={{margin:"0 0 10px",fontFamily:"'Poppins', sans-serif",fontWeight:700,fontSize:13,color:WHITE}}>Add a URL as evidence</p>
+          <div style={{display:"flex",gap:8}}>
+            <input value={urlInput} onChange={e=>setUrlInput(e.target.value)} onKeyDown={e=>e.key==="Enter"&&handleUrl()} placeholder="https://example.com/page" style={{flex:1,background:"#001e3d",border:`1px solid ${BORDER}`,borderRadius:8,padding:"8px 12px",color:WHITE,fontSize:13,outline:"none",fontFamily:"'Open Sans', sans-serif"}}/>
+            <Btn onClick={handleUrl} disabled={!urlInput.trim()}>Add</Btn>
+            <Btn variant="subtle" onClick={()=>setShowUrl(false)}>Cancel</Btn>
+          </div>
+        </div>
+      )}
+
+      {!dossier&&!processing&&(<div style={{textAlign:"center",padding:"44px 20px"}}><p style={{color:"#5a7a96",fontSize:14,fontStyle:"italic",maxWidth:420,margin:"0 auto",lineHeight:1.8}}>Your evidence dossier will appear here as you upload. Each document is automatically read, analysed, and filed. Your case builds itself.</p></div>)}
+
+      {dossier&&(
+        <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit, minmax(300px, 1fr))",gap:16}}>
+          <div>
+            <Panel title="Case Overview" icon="📋" action={<Btn small variant="ghost" onClick={()=>downloadPdf("overview",dossier)}>↓</Btn>}>{dossier.overview?<p style={{margin:0,fontSize:13,lineHeight:1.8,color:LIGHT}}>{dossier.overview}</p>:<EmptyState text="Building overview…"/>}</Panel>
+            <Panel title="Witness Statement" icon="📝" action={<div style={{display:"flex",gap:6}}><Btn small variant="ghost" onClick={()=>setEditingWitness(true)}>✏</Btn><Btn small variant="ghost" onClick={()=>downloadPdf("statement",dossier)}>↓</Btn></div>}>{dossier.witness_statement?<p style={{margin:0,fontSize:13,lineHeight:1.9,color:LIGHT,whiteSpace:"pre-wrap"}}>{dossier.witness_statement}</p>:<EmptyState text="Building statement…"/>}</Panel>
+            <Panel title="Next Steps" icon="📌" action={<Btn small variant="ghost" onClick={()=>downloadPdf("nextsteps",dossier)}>↓</Btn>}>{dossier.next_steps?<p style={{margin:0,fontSize:13,lineHeight:1.8,color:LIGHT,whiteSpace:"pre-wrap"}}>{dossier.next_steps}</p>:<EmptyState text="Next steps will appear here…"/>}</Panel>
+            <Panel title="Key Questions in This Case" icon="❓" action={<Btn small variant="ghost" onClick={()=>downloadPdf("keyquestions",dossier)}>↓</Btn>}>{dossier.key_questions?<>
+<p style={{margin:0,fontSize:13,lineHeight:1.8,color:LIGHT,whiteSpace:"pre-wrap"}}>{cleanNumbering(dossier.key_questions)}</p>
+<AIDisclaimer/>
+</>:<EmptyState text="Key questions will appear as you add evidence."/>}</Panel>
+            <Panel title="Decision-Maker Summary" icon="⚖️" action={<Btn small variant="ghost" onClick={()=>downloadPdf("decisionsummary",dossier)}>↓</Btn>}>{dossier.decision_summary?<>
+<p style={{margin:0,fontSize:13,lineHeight:1.8,color:LIGHT,whiteSpace:"pre-wrap"}}>{dossier.decision_summary}</p>
+<AIDisclaimer/>
+</>:<EmptyState text="Decision-Maker Summary will appear after you add evidence. This is the one-page view for a judge, ombudsman, or regulator."/>}</Panel>
+            {dossier.institution_response&&<Panel title="The Strongest Answer to Your Case" icon="⚔️"><p style={{margin:"0 0 8px",fontSize:12,color:"#a0b4c8",lineHeight:1.6}}>Based strictly on the evidence filed so far. This identifies the strongest argument the evidence currently supports, what the evidence contradicts, and where no conclusion can yet be drawn. Check it against the actual response when it arrives.</p><p style={{margin:0,fontSize:13,lineHeight:1.8,color:LIGHT,whiteSpace:"pre-wrap"}}>{dossier.institution_response}</p><AIDisclaimer/></Panel>}
+            {dossier.burden_of_proof_letter&&<Panel title="Burden of Proof Challenge Letter" icon="✉️" action={<Btn small variant="ghost" onClick={()=>{const blob=new Blob([dossier.burden_of_proof_letter],{type:'text/plain'});const u=URL.createObjectURL(blob);const a=document.createElement('a');a.href=u;a.download='Challenge_Letter.txt';a.click();}}>↓</Btn>}><p style={{margin:"0 0 10px",fontSize:12,color:"#a0b4c8",lineHeight:1.6}}>This letter asks the claimant to prove their case before you are required to respond. Review, adapt if needed, then send by recorded post or email with read receipt.</p><p style={{margin:0,fontSize:13,lineHeight:1.8,color:LIGHT,whiteSpace:"pre-wrap",background:"#001830",padding:12,borderRadius:8,border:"1px solid #1e3a5f"}}>{dossier.burden_of_proof_letter}</p></Panel>}
+          </div>
+          <div>
+            <Panel title="Timeline" icon="📅" action={<Btn small variant="ghost" onClick={()=>downloadPdf("timeline",dossier)}>↓</Btn>}>
+              {!(dossier.timeline||[]).length?<EmptyState text="Timeline building…"/>:(dossier.timeline||[]).map((t,i)=>(<div key={i} style={{display:"flex",gap:10,marginBottom:11,paddingBottom:11,borderBottom:i<dossier.timeline.length-1?`1px solid ${BORDER}`:"none"}}><div style={{width:24,height:24,background:YELLOW,borderRadius:"50%",display:"flex",alignItems:"center",justifyContent:"center",fontFamily:"'Poppins', sans-serif",fontWeight:700,fontSize:10,color:NAVY,flexShrink:0}}>{i+1}</div><div style={{flex:1}}><div style={{display:"flex",alignItems:"flex-start",justifyContent:"space-between",gap:8}}><div style={{fontSize:11,color:YELLOW,fontWeight:600,marginBottom:2}}>{t.date||"Date unknown"}</div><button onClick={()=>setEditingTimeline(i)} style={{background:"none",border:`1px solid ${BORDER}`,borderRadius:4,padding:"2px 7px",color:YELLOW,fontSize:10,cursor:"pointer",flexShrink:0}}>✏</button></div><div style={{fontSize:13,color:LIGHT,lineHeight:1.6}}>{t.event}</div></div></div>))}
+            </Panel>
+            <Panel title={`Evidence Library — ${evidenceCount} item${evidenceCount!==1?"s":""}`} icon="🗂️" action={<Btn small variant="ghost" onClick={()=>downloadPdf("evidence",dossier)}>↓</Btn>}>
+              {!evidenceCount?<EmptyState text="No evidence uploaded yet."/>:[...(dossier.evidence||[])].reverse().map((e,i)=>{
+                const ri=evidenceCount-1-i;
+                return(<div key={i} style={{background:"#001e3d",border:`1px solid ${BORDER}`,borderRadius:10,padding:"10px 12px",marginBottom:8}}>
+                  <div style={{display:"flex",alignItems:"flex-start",gap:7,marginBottom:5}}>
+                    <span style={{fontFamily:"'Poppins', sans-serif",fontWeight:700,fontSize:11,color:YELLOW,flexShrink:0}}>#{String(ri+1).padStart(3,"0")}</span>
+                    <span style={{fontFamily:"'Poppins', sans-serif",fontWeight:700,fontSize:13,color:WHITE,flex:1}}>{e.title}</span>
+                    <div style={{display:"flex",gap:3,flexShrink:0}}>
+                      <button onClick={()=>handleMoveEvidence(ri,-1)} disabled={ri===0} style={{background:"none",border:`1px solid ${BORDER}`,borderRadius:4,padding:"2px 5px",color:"#7a96b0",fontSize:10,cursor:ri===0?"not-allowed":"pointer",opacity:ri===0?0.3:1}}>↑</button>
+                      <button onClick={()=>handleMoveEvidence(ri,1)} disabled={ri===evidenceCount-1} style={{background:"none",border:`1px solid ${BORDER}`,borderRadius:4,padding:"2px 5px",color:"#7a96b0",fontSize:10,cursor:ri===evidenceCount-1?"not-allowed":"pointer",opacity:ri===evidenceCount-1?0.3:1}}>↓</button>
+                      <button onClick={()=>setEditingEvidence(ri)} style={{background:"none",border:`1px solid ${BORDER}`,borderRadius:4,padding:"2px 7px",color:YELLOW,fontSize:10,cursor:"pointer"}}>✏</button>
+                    </div>
+                  </div>
+                  <div style={{display:"flex",gap:5,flexWrap:"wrap",marginBottom:5}}>{e.date&&<Tag>{e.date}</Tag>}{e.type&&<Tag color="#7a96b0">{e.type}</Tag>}</div>
+                  <p style={{margin:"0 0 4px",fontSize:12,color:LIGHT,lineHeight:1.6}}>{e.summary}</p>
+                  {e.facts_observed&&<p style={{margin:"0 0 3px",fontSize:11,color:"#7a96b0"}}><span style={{fontWeight:600,textTransform:"uppercase",fontSize:10,letterSpacing:"0.05em"}}>What this shows: </span>{e.facts_observed}</p>}{e.significance&&<p style={{margin:0,fontSize:11,color:YELLOW}}><span style={{fontWeight:600,textTransform:"uppercase",fontSize:10,letterSpacing:"0.05em"}}>Why it matters: </span>{e.significance}</p>}{e.significance&&<AIDisclaimer compact/>}
+                </div>);
+              })}
+            </Panel>

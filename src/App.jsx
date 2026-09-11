@@ -1054,13 +1054,21 @@ export default function GoliathonApp(){
     const needsConversion=["html","htm","doc","docx","msg"].includes(ext);
     const allowed=["jpg","jpeg","png","gif","webp","pdf","txt","html","htm","doc","docx","msg"];
     if(!allowed.includes(ext)){alert("Unsupported file type. Goliathon accepts: JPG, PNG, PDF, TXT, HTML, DOC, DOCX, MSG.");return;}
+    const isImg=['jpg','jpeg','png','gif','webp'].includes(ext);
+    // Images are compressed/resized below before upload, so they rarely hit
+    // the size limit. Everything else (PDF, TXT, and files awaiting
+    // conversion) is sent close to its raw size, so check it up front.
+    const MAX_DIRECT_UPLOAD_BYTES=2.5*1024*1024;
+    if(!isImg&&file.size>MAX_DIRECT_UPLOAD_BYTES){
+      alert(`This file is ${(file.size/1024/1024).toFixed(1)}MB, which is too large for Goliathon to process directly (limit: 2.5MB). Try compressing the PDF, splitting it into smaller sections, or saving it as a plain text (.txt) file if possible.`);
+      return;
+    }
     if(needsConversion){
       setProcessing(true);setProcessingMsg(`Converting ${file.name}…`);
       try{const base64=await fileToBase64(file);const res=await fetch("/api/convert",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({filename:file.name,mediaType:file.type,data:base64})});const data=await res.json();if(data.error)throw new Error(data.error);await processEvidence(data.text,file.name,"text/plain");}
       catch(e){alert("Could not convert this file: "+e.message);setProcessing(false);setProcessingMsg("");}
       return;
     }
-    const isImg=['jpg','jpeg','png','gif','webp'].includes(ext);
     if(isImg){
       const resized=await new Promise(res=>{
         const img=new Image();const url=URL.createObjectURL(file);

@@ -72,6 +72,27 @@ function compressImage(file){
 }
 function downloadText(filename,content){const blob=new Blob([content],{type:"text/plain"});const url=URL.createObjectURL(blob);const a=document.createElement("a");a.href=url;a.download=filename;a.click();URL.revokeObjectURL(url);}
 
+// Safely coerces any value into displayable text. AI responses for these
+// narrative fields are supposed to be plain strings, but can occasionally
+// come back as structured JSON objects instead — this prevents that from
+// ever crashing the render (React cannot render a raw object as a child).
+// Object keys are turned into readable headers rather than being discarded.
+function toDisplayText(value){
+  if(value==null)return "";
+  if(typeof value==="string")return value;
+  if(Array.isArray(value)){
+    return value.map((v,i)=>typeof v==="string"?`${i+1}. ${v}`:toDisplayText(v)).join("\n");
+  }
+  if(typeof value==="object"){
+    return Object.entries(value).map(([k,v])=>{
+      const label=k.replace(/_/g," ").replace(/\b\w/g,c=>c.toUpperCase());
+      const body=typeof v==="string"?v:Array.isArray(v)?v.map(x=>typeof x==="string"?x:toDisplayText(x)).join("; "):toDisplayText(v);
+      return `${label}:\n${body}`;
+    }).join("\n\n");
+  }
+  return String(value);
+}
+
 // ── PDF GENERATION ────────────────────────────────────────────────────────────
 async function loadLogoBase64(){
   return new Promise((resolve)=>{
@@ -705,17 +726,17 @@ function ReadOnlyDossier({dossier}){
   return(<div style={{fontFamily:"'Open Sans', sans-serif",background:NAVY,minHeight:"100vh",color:LIGHT}}>
     <div style={{background:NAVY,borderBottom:`3px solid ${YELLOW}`,padding:"14px 20px"}}><div style={{maxWidth:860,margin:"0 auto",display:"flex",alignItems:"center",gap:14,flexWrap:"wrap"}}><img src="/getsafe-logo.png" alt="Get SAFE" style={{width:40,height:40,objectFit:"contain"}}/><div style={{flex:1,minWidth:0}}><div style={{fontSize:9,letterSpacing:3,color:YELLOW,textTransform:"uppercase",fontFamily:"'Poppins', sans-serif"}}>Get SAFE · Goliathon Evidence Dossier</div><h1 style={{margin:0,fontFamily:"'Poppins', sans-serif",fontSize:19,fontWeight:800,color:WHITE,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{dossier.case_title||"Evidence Dossier"}</h1></div><div style={{display:"flex",gap:8,alignItems:"center"}}><Tag>Read Only</Tag><Btn small onClick={()=>setShowDownload(true)}>↓ Download</Btn></div></div></div>
     <div style={{maxWidth:860,margin:"0 auto",padding:"20px 16px"}}>
-      <Panel title="Case Overview" icon="📋">{dossier.overview?<p style={{margin:0,fontSize:14,lineHeight:1.8,color:LIGHT}}>{dossier.overview}</p>:<EmptyState text="No overview yet."/>}</Panel>
+      <Panel title="Case Overview" icon="📋">{dossier.overview?<p style={{margin:0,fontSize:14,lineHeight:1.8,color:LIGHT}}>{toDisplayText(dossier.overview)}</p>:<EmptyState text="No overview yet."/>}</Panel>
       <Panel title="Timeline" icon="📅">{!(dossier.timeline||[]).length?<EmptyState text="No timeline yet."/>:(dossier.timeline||[]).map((t,i)=>(<div key={i} style={{display:"flex",gap:12,marginBottom:12,paddingBottom:12,borderBottom:i<dossier.timeline.length-1?`1px solid ${BORDER}`:"none"}}><div style={{width:26,height:26,background:YELLOW,borderRadius:"50%",display:"flex",alignItems:"center",justifyContent:"center",fontFamily:"'Poppins', sans-serif",fontWeight:700,fontSize:11,color:NAVY,flexShrink:0}}>{i+1}</div><div><div style={{fontSize:11,color:YELLOW,fontWeight:600,marginBottom:2}}>{t.date||"Date unknown"}</div><div style={{fontSize:13,color:LIGHT,lineHeight:1.6}}>{t.event}</div></div></div>))}</Panel>
-      <Panel title="Witness Statement" icon="📝">{dossier.witness_statement?<p style={{margin:0,fontSize:14,lineHeight:1.9,color:LIGHT,whiteSpace:"pre-wrap"}}>{dossier.witness_statement}</p>:<EmptyState text="No statement yet."/>}</Panel>
+      <Panel title="Witness Statement" icon="📝">{dossier.witness_statement?<p style={{margin:0,fontSize:14,lineHeight:1.9,color:LIGHT,whiteSpace:"pre-wrap"}}>{toDisplayText(dossier.witness_statement)}</p>:<EmptyState text="No statement yet."/>}</Panel>
       <Panel title={`Evidence Library — ${(dossier.evidence||[]).length} items`} icon="🗂️">{!(dossier.evidence||[]).length?<EmptyState text="No evidence yet."/>:(dossier.evidence||[]).map((e,i)=>(<div key={i} style={{background:"#001e3d",border:`1px solid ${BORDER}`,borderRadius:10,padding:13,marginBottom:9}}><div style={{display:"flex",alignItems:"center",gap:7,marginBottom:6,flexWrap:"wrap"}}><span style={{fontFamily:"'Poppins', sans-serif",fontWeight:700,fontSize:11,color:YELLOW}}>#{String(i+1).padStart(3,"0")}</span><span style={{fontFamily:"'Poppins', sans-serif",fontWeight:700,fontSize:13,color:WHITE,flex:1}}>{e.title}</span>{e.date&&<Tag>{e.date}</Tag>}{e.type&&<Tag color="#7a96b0">{e.type}</Tag>}</div><p style={{margin:"0 0 6px",fontSize:12,color:LIGHT,lineHeight:1.6}}>{e.summary}</p>{e.facts_observed&&<p style={{margin:"0 0 3px",fontSize:11,color:"#7a96b0"}}><span style={{fontWeight:600,textTransform:"uppercase",fontSize:10,letterSpacing:"0.05em"}}>What this shows: </span>{e.facts_observed}</p>}{e.significance&&<p style={{margin:0,fontSize:11,color:YELLOW}}><span style={{fontWeight:600,textTransform:"uppercase",fontSize:10,letterSpacing:"0.05em"}}>Why it matters: </span>{e.significance}</p>}{e.significance&&<AIDisclaimer compact/>}</div>))}</Panel>
-      <Panel title="Next Steps" icon="📌">{dossier.next_steps?<p style={{margin:0,fontSize:14,lineHeight:1.8,color:LIGHT,whiteSpace:"pre-wrap"}}>{dossier.next_steps}</p>:<EmptyState text="No next steps yet."/>}</Panel>
+      <Panel title="Next Steps" icon="📌">{dossier.next_steps?<p style={{margin:0,fontSize:14,lineHeight:1.8,color:LIGHT,whiteSpace:"pre-wrap"}}>{toDisplayText(dossier.next_steps)}</p>:<EmptyState text="No next steps yet."/>}</Panel>
       <Panel title="Key Questions in This Case" icon="❓">{dossier.key_questions?<>
-<p style={{margin:0,fontSize:14,lineHeight:1.8,color:LIGHT,whiteSpace:"pre-wrap"}}>{cleanNumbering(dossier.key_questions)}</p>
+<p style={{margin:0,fontSize:14,lineHeight:1.8,color:LIGHT,whiteSpace:"pre-wrap"}}>{cleanNumbering(toDisplayText(dossier.key_questions))}</p>
 <AIDisclaimer/>
 </>:<EmptyState text="Key questions will appear as you add evidence."/>}</Panel>
       <Panel title="Decision-Maker Summary" icon="⚖️">{dossier.decision_summary?<>
-<p style={{margin:0,fontSize:14,lineHeight:1.8,color:LIGHT,whiteSpace:"pre-wrap"}}>{dossier.decision_summary}</p>
+<p style={{margin:0,fontSize:14,lineHeight:1.8,color:LIGHT,whiteSpace:"pre-wrap"}}>{toDisplayText(dossier.decision_summary)}</p>
 <AIDisclaimer/>
 </>:<EmptyState text="Decision-Maker Summary will appear after you add evidence. This is the one-page view for a judge, ombudsman, or regulator."/>}</Panel>
     </div>
@@ -1043,7 +1064,7 @@ export default function GoliathonApp(){
       const newNextSteps=cleanNumbering(rawNextSteps);
       const rawKeyQ=typeof parsed.key_questions_update==="string"?parsed.key_questions_update:Array.isArray(parsed.key_questions_update)?parsed.key_questions_update.map((s,i)=>`${i+1}. ${s}`).join("\n"):(typeof current.key_questions==="string"?current.key_questions:"");
       const newKeyQuestions=cleanNumbering(rawKeyQ);
-      const newDossier={...current,case_title:parsed.case_title||current.case_title,overview:parsed.overview_update||current.overview,timeline:newTimeline,witness_statement:newWitness,next_steps:newNextSteps,key_questions:newKeyQuestions,evidence:newEvidence,decision_summary:parsed.decision_summary_update||current.decision_summary,institution_response:parsed.institution_response||current.institution_response||""};
+      const newDossier={...current,case_title:parsed.case_title||current.case_title,overview:toDisplayText(parsed.overview_update)||current.overview,timeline:newTimeline,witness_statement:newWitness,next_steps:newNextSteps,key_questions:newKeyQuestions,evidence:newEvidence,decision_summary:toDisplayText(parsed.decision_summary_update)||current.decision_summary,institution_response:toDisplayText(parsed.institution_response)||current.institution_response||""};
       await updateDossier(newDossier);
     }catch(e){alert("Something went wrong processing this file. Please try again.\n\n"+e.message);}
     setProcessing(false);setProcessingMsg("");
@@ -1293,18 +1314,18 @@ export default function GoliathonApp(){
       {dossier&&(
         <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit, minmax(300px, 1fr))",gap:16}}>
           <div>
-            <Panel title="Case Overview" icon="📋" action={<Btn small variant="ghost" onClick={()=>downloadPdf("overview",dossier)}>↓</Btn>}>{dossier.overview?<p style={{margin:0,fontSize:13,lineHeight:1.8,color:LIGHT}}>{dossier.overview}</p>:<EmptyState text="Building overview…"/>}</Panel>
-            <Panel title="Witness Statement" icon="📝" action={<div style={{display:"flex",gap:6}}><Btn small variant="ghost" onClick={()=>setEditingWitness(true)}>✏</Btn><Btn small variant="ghost" onClick={()=>downloadPdf("statement",dossier)}>↓</Btn></div>}>{dossier.witness_statement?<p style={{margin:0,fontSize:13,lineHeight:1.9,color:LIGHT,whiteSpace:"pre-wrap"}}>{dossier.witness_statement}</p>:<EmptyState text="Building statement…"/>}</Panel>
-            <Panel title="Next Steps" icon="📌" action={<Btn small variant="ghost" onClick={()=>downloadPdf("nextsteps",dossier)}>↓</Btn>}>{dossier.next_steps?<p style={{margin:0,fontSize:13,lineHeight:1.8,color:LIGHT,whiteSpace:"pre-wrap"}}>{dossier.next_steps}</p>:<EmptyState text="Next steps will appear here…"/>}</Panel>
+            <Panel title="Case Overview" icon="📋" action={<Btn small variant="ghost" onClick={()=>downloadPdf("overview",dossier)}>↓</Btn>}>{dossier.overview?<p style={{margin:0,fontSize:13,lineHeight:1.8,color:LIGHT}}>{toDisplayText(dossier.overview)}</p>:<EmptyState text="Building overview…"/>}</Panel>
+            <Panel title="Witness Statement" icon="📝" action={<div style={{display:"flex",gap:6}}><Btn small variant="ghost" onClick={()=>setEditingWitness(true)}>✏</Btn><Btn small variant="ghost" onClick={()=>downloadPdf("statement",dossier)}>↓</Btn></div>}>{dossier.witness_statement?<p style={{margin:0,fontSize:13,lineHeight:1.9,color:LIGHT,whiteSpace:"pre-wrap"}}>{toDisplayText(dossier.witness_statement)}</p>:<EmptyState text="Building statement…"/>}</Panel>
+            <Panel title="Next Steps" icon="📌" action={<Btn small variant="ghost" onClick={()=>downloadPdf("nextsteps",dossier)}>↓</Btn>}>{dossier.next_steps?<p style={{margin:0,fontSize:13,lineHeight:1.8,color:LIGHT,whiteSpace:"pre-wrap"}}>{toDisplayText(dossier.next_steps)}</p>:<EmptyState text="Next steps will appear here…"/>}</Panel>
             <Panel title="Key Questions in This Case" icon="❓" action={<Btn small variant="ghost" onClick={()=>downloadPdf("keyquestions",dossier)}>↓</Btn>}>{dossier.key_questions?<>
-<p style={{margin:0,fontSize:13,lineHeight:1.8,color:LIGHT,whiteSpace:"pre-wrap"}}>{cleanNumbering(dossier.key_questions)}</p>
+<p style={{margin:0,fontSize:13,lineHeight:1.8,color:LIGHT,whiteSpace:"pre-wrap"}}>{cleanNumbering(toDisplayText(dossier.key_questions))}</p>
 <AIDisclaimer/>
 </>:<EmptyState text="Key questions will appear as you add evidence."/>}</Panel>
             <Panel title="Decision-Maker Summary" icon="⚖️" action={<Btn small variant="ghost" onClick={()=>downloadPdf("decisionsummary",dossier)}>↓</Btn>}>{dossier.decision_summary?<>
-<p style={{margin:0,fontSize:13,lineHeight:1.8,color:LIGHT,whiteSpace:"pre-wrap"}}>{dossier.decision_summary}</p>
+<p style={{margin:0,fontSize:13,lineHeight:1.8,color:LIGHT,whiteSpace:"pre-wrap"}}>{toDisplayText(dossier.decision_summary)}</p>
 <AIDisclaimer/>
 </>:<EmptyState text="Decision-Maker Summary will appear after you add evidence. This is the one-page view for a judge, ombudsman, or regulator."/>}</Panel>
-            {dossier.institution_response&&<Panel title="The Strongest Answer to Your Case" icon="⚔️"><p style={{margin:"0 0 8px",fontSize:12,color:"#a0b4c8",lineHeight:1.6}}>Based strictly on the evidence filed so far. This identifies the strongest argument the evidence currently supports, what the evidence contradicts, and where no conclusion can yet be drawn. Check it against the actual response when it arrives.</p><p style={{margin:0,fontSize:13,lineHeight:1.8,color:LIGHT,whiteSpace:"pre-wrap"}}>{dossier.institution_response}</p><AIDisclaimer/></Panel>}
+            {dossier.institution_response&&<Panel title="The Strongest Answer to Your Case" icon="⚔️"><p style={{margin:"0 0 8px",fontSize:12,color:"#a0b4c8",lineHeight:1.6}}>Based strictly on the evidence filed so far. This identifies the strongest argument the evidence currently supports, what the evidence contradicts, and where no conclusion can yet be drawn. Check it against the actual response when it arrives.</p><p style={{margin:0,fontSize:13,lineHeight:1.8,color:LIGHT,whiteSpace:"pre-wrap"}}>{toDisplayText(dossier.institution_response)}</p><AIDisclaimer/></Panel>}
             {dossier.burden_of_proof_letter&&<Panel title="Burden of Proof Challenge Letter" icon="✉️" action={<Btn small variant="ghost" onClick={()=>{const blob=new Blob([dossier.burden_of_proof_letter],{type:'text/plain'});const u=URL.createObjectURL(blob);const a=document.createElement('a');a.href=u;a.download='Challenge_Letter.txt';a.click();}}>↓</Btn>}><p style={{margin:"0 0 10px",fontSize:12,color:"#a0b4c8",lineHeight:1.6}}>This letter asks the claimant to prove their case before you are required to respond. Review, adapt if needed, then send by recorded post or email with read receipt.</p><p style={{margin:0,fontSize:13,lineHeight:1.8,color:LIGHT,whiteSpace:"pre-wrap",background:"#001830",padding:12,borderRadius:8,border:"1px solid #1e3a5f"}}>{dossier.burden_of_proof_letter}</p></Panel>}
           </div>
           <div>
@@ -1367,7 +1388,7 @@ export default function GoliathonApp(){
     {showDownload&&dossier&&<DownloadModal dossier={dossier} onClose={()=>setShowDownload(false)}/>}
     {editingEvidence!==null&&dossier?.evidence?.[editingEvidence]&&(<EditEvidenceModal item={dossier.evidence[editingEvidence]} index={editingEvidence} onSave={handleEditEvidence} onDelete={handleDeleteEvidence} onClose={()=>setEditingEvidence(null)}/>)}
     {editingTimeline!==null&&dossier?.timeline?.[editingTimeline]&&(<EditTimelineModal item={dossier.timeline[editingTimeline]} index={editingTimeline} onSave={handleEditTimeline} onDelete={handleDeleteTimeline} onClose={()=>setEditingTimeline(null)}/>)}
-    {editingWitness&&dossier&&(<EditWitnessModal text={dossier.witness_statement} onSave={handleEditWitness} onClose={()=>setEditingWitness(false)}/>)}
+    {editingWitness&&dossier&&(<EditWitnessModal text={toDisplayText(dossier.witness_statement)} onSave={handleEditWitness} onClose={()=>setEditingWitness(false)}/>)}
 
     <style>{`@keyframes pulse{0%,100%{opacity:.3;transform:scale(.8)}50%{opacity:1;transform:scale(1)}}*{box-sizing:border-box}::-webkit-scrollbar{width:6px}::-webkit-scrollbar-track{background:#001e3d}::-webkit-scrollbar-thumb{background:${YELLOW}40;border-radius:3px}input::placeholder,textarea::placeholder{color:#5a7a96}`}</style>
   </div>);

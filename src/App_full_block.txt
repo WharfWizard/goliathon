@@ -1,0 +1,69 @@
+  const processEvidence=useCallback(async(content,filename,mediaType,isUrl=false)=>{
+    setProcessing(true);setProcessingMsg(`Reading ${filename}…`);
+    try{
+      const isImage=mediaType?.startsWith("image/");const isPdf=mediaType==="application/pdf";
+      let userMessage;
+      if(isImage){userMessage={role:"user",content:[{type:"image",source:{type:"base64",media_type:mediaType,data:content}},{type:"text",text:`Analyse this uploaded image as evidence. Filename: ${filename}`}]};}
+      else if(isPdf){userMessage={role:"user",content:[{type:"document",source:{type:"base64",media_type:"application/pdf",data:content}},{type:"text",text:`Analyse this uploaded document as evidence. Filename: ${filename}`}]};}
+      else{userMessage={role:"user",content:`Analyse this evidence. ${isUrl?"Source URL: "+filename:"Filename: "+filename}\n\nContent:\n${content}`};}
+      const nextStepsText=typeof dossier?.next_steps==="string"?dossier.next_steps:Array.isArray(dossier?.next_steps)?dossier.next_steps.join("\n"):"";
+      const existing=dossier?`\n\nExisting case:\nTitle: ${dossier.case_title||"Unknown"}\nOverview: ${(dossier.overview||"").substring(0,600)}\nTimeline: ${(dossier.timeline||[]).map(t=>`[${t.date}] ${t.event}`).join("; ").substring(0,400)}\nStatement: ${(dossier.witness_statement||"").substring(0,400)}\nEvidence filed (${(dossier.evidence||[]).length}): ${(dossier.evidence||[]).map(e=>e.title).join(", ")}\nNext steps: ${nextStepsText.substring(0,200)}`:"\n\nThis is the FIRST piece of evidence — establish the case title, parties, and initial overview.";
+      setProcessingMsg("Analysing evidence…");
+      const prompt=`${existing}\n\nAnalyse this evidence and return ONLY valid JSON with no preamble or markdown:\n{"case_title":"short case title","evidence_item":{"title":"descriptive title","date":"DD Mon YYYY or null","type":"Letter/Email/Statement/Report/Photo/Web Page/Other","summary":"2-3 sentence factual summary of what this document shows","facts_observed":"one sentence listing only what is directly stated or shown in the document — no interpretation","significance":"one sentence explaining why this matters to the case — clearly interpretive"},"timeline_entry":{"date":"DD Mon YYYY or null","event":"one sentence","evidence":"reference to this document"},"overview_update":"updated 3-4 sentence case overview","witness_update":"one or two new sentences in first person only","next_steps_update":"updated numbered list of 3-5 priority actions. Where a step involves escalation, explain the financial and procedural risk specific to that route. Distinguish between: (a) internal complaints and FOS referrals — free for consumers, no adverse costs exposure; (b) FCA or regulatory reporting — does not adjudicate individual complaints or obtain individual redress; (c) civil litigation — court fees, professional fees and an adverse costs order may arise depending on track and claim type. Do not imply adverse-costs exposure where it does not ordinarily arise.","key_questions_update":"updated list of 3-5 plain-language questions this case still needs to answer, from the survivor's point of view","institution_response":"the strongest reasonable answer to this case, based strictly on the current evidence. Apply four disciplines: (1) Identify the strongest argument the institution could make that is supported by the current evidence — do not invent motives, facts or defences. (2) Where the evidence contradicts that argument, say so precisely. (3) Where the evidence leaves the argument open, say so. (4) Where the evidence does not yet allow any prediction, state that plainly. Write 2-4 sentences maximum. Do not speculate beyond what the evidence supports.","decision_summary_update":"updated one-page decision-maker summary with: (1) What this case is about — 2 sentences; (2) The core dispute — bullet list of 3-5 unanswered questions the institution cannot yet answer; (3) Strongest evidence — the 2-3 most significant items filed so far; (4) What the institution will likely argue — one sentence on their probable counter-position based only on the evidence; (5) Resource asymmetry — identify any material asymmetry in financial resources, information, legal representation or capacity to sustain the dispute. Explain its practical effect without treating inequality as evidence of misconduct. Where the evidence shows costs threats or procedural demands were actually used, describe them precisely. Distinguish between unequal capacity and demonstrated exploitation of it — power imbalance is context, abuse of power requires evidence; (6) What happens next — the single most important action. Written in plain English for a judge, ombudsman, or regulator reading this for the first time."}`;
+      const response=await callClaude([{...userMessage,content:typeof userMessage.content==="string"?userMessage.content+prompt:[...(Array.isArray(userMessage.content)?userMessage.content:[userMessage.content]),{type:"text",text:prompt}]}]);
+      let parsed;try{parsed=JSON.parse(response.replace(/```json|```/g,"").trim());}catch{throw new Error("Could not parse AI response");}
+      setProcessingMsg("Updating dossier…");
+      const current=dossier||{evidence:[],timeline:[],witness_statement:"",overview:"",next_steps:""};
+      const newEvidence=[...(current.evidence||[]),parsed.evidence_item];
+      const newTimeline=[...(current.timeline||[])];
+      if(parsed.timeline_entry?.event){newTimeline.push(parsed.timeline_entry);newTimeline.sort((a,b)=>{if(!a.date)return 1;if(!b.date)return-1;return new Date(a.date)-new Date(b.date);});}
+      const newWitness=current.witness_statement?current.witness_statement+"\n\n"+(parsed.witness_update||""):parsed.witness_update||"";
+      const rawNextSteps=typeof parsed.next_steps_update==="string"?parsed.next_steps_update:Array.isArray(parsed.next_steps_update)?parsed.next_steps_update.map((s,i)=>`${i+1}. ${s}`).join("\n"):(typeof current.next_steps==="string"?current.next_steps:"");
+      const newNextSteps=cleanNumbering(rawNextSteps);
+      const rawKeyQ=typeof parsed.key_questions_update==="string"?parsed.key_questions_update:Array.isArray(parsed.key_questions_update)?parsed.key_questions_update.map((s,i)=>`${i+1}. ${s}`).join("\n"):(typeof current.key_questions==="string"?current.key_questions:"");
+      const newKeyQuestions=cleanNumbering(rawKeyQ);
+      const newDossier={...current,case_title:parsed.case_title||current.case_title,overview:toDisplayText(parsed.overview_update)||current.overview,timeline:newTimeline,witness_statement:newWitness,next_steps:newNextSteps,key_questions:newKeyQuestions,evidence:newEvidence,decision_summary:toDisplayText(parsed.decision_summary_update)||current.decision_summary,institution_response:toDisplayText(parsed.institution_response)||current.institution_response||""};
+      await updateDossier(newDossier);
+    }catch(e){alert("Something went wrong processing this file. Please try again.\n\n"+e.message);}
+    setProcessing(false);setProcessingMsg("");
+  },[dossier,updateDossier]);
+
+  const handleFile=useCallback(async(file)=>{
+    if(!file)return;const ext=file.name.split(".").pop().toLowerCase();
+    const needsConversion=["html","htm","doc","docx","msg"].includes(ext);
+    const allowed=["jpg","jpeg","png","gif","webp","pdf","txt","html","htm","doc","docx","msg"];
+    if(!allowed.includes(ext)){alert("Unsupported file type. Goliathon accepts: JPG, PNG, PDF, TXT, HTML, DOC, DOCX, MSG.");return;}
+    const isImg=['jpg','jpeg','png','gif','webp'].includes(ext);
+    // Images are compressed/resized below before upload, so they rarely hit
+    // the size limit. Everything else (PDF, TXT, and files awaiting
+    // conversion) is sent close to its raw size, so check it up front.
+    const MAX_DIRECT_UPLOAD_BYTES=2.5*1024*1024;
+    if(!isImg&&file.size>MAX_DIRECT_UPLOAD_BYTES){
+      alert(`This file is ${(file.size/1024/1024).toFixed(1)}MB, which is too large for Goliathon to process directly (limit: 2.5MB). Try compressing the PDF, splitting it into smaller sections, or saving it as a plain text (.txt) file if possible.`);
+      return;
+    }
+    if(needsConversion){
+      setProcessing(true);setProcessingMsg(`Converting ${file.name}…`);
+      try{const base64=await fileToBase64(file);const res=await fetch("/api/convert",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({filename:file.name,mediaType:file.type,data:base64})});const data=await res.json();if(data.error)throw new Error(data.error);await processEvidence(data.text,file.name,"text/plain");}
+      catch(e){alert("Could not convert this file: "+e.message);setProcessing(false);setProcessingMsg("");}
+      return;
+    }
+    if(isImg){
+      const resized=await new Promise(res=>{
+        const img=new Image();const url=URL.createObjectURL(file);
+        img.onload=()=>{
+          const scale=Math.min(1,1200/Math.max(img.width,img.height));
+          const canvas=document.createElement('canvas');
+          canvas.width=Math.round(img.width*scale);canvas.height=Math.round(img.height*scale);
+          canvas.getContext('2d').drawImage(img,0,0,canvas.width,canvas.height);
+          URL.revokeObjectURL(url);res(canvas.toDataURL('image/jpeg',0.82).split(',')[1]);
+        };img.src=url;
+      });
+      await processEvidence(resized,file.name,'image/jpeg');
+    } else {
+      const base64=await fileToBase64(file);await processEvidence(base64,file.name,file.type);
+    }
+  },[processEvidence]);
+
+  const handleUrl=useCallback(async()=>{
+    if(!urlInput.trim())return;setShowUrl(false);setProcessing(true);setProcessingMsg("Fetching URL…");

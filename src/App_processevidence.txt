@@ -1,0 +1,31 @@
+      };
+      await updateDossier(newDossier);
+      const h=await hashFile((threatForm.details||'')+(threatForm.claimant||'')+(threatFile?threatFile.name:''));
+      const hashes=JSON.parse(localStorage.getItem('goliathon_hashes_'+activeId)||'[]');
+      hashes.push({hash:h,title:parsed.document_title||('Legal Threat — '+(threatForm.claimant||'unknown'))});
+      localStorage.setItem('goliathon_hashes_'+activeId,JSON.stringify(hashes));
+    }catch(e){console.error('Threat intake error',e);alert('Something went wrong: '+e.message);}
+    setThreatProcessing(false);
+    setThreatForm({claimant:'',amount:'',deadline:'',claimType:'mortgage possession',details:''});
+    setThreatFile(null);
+  },[threatForm,threatFile,activeId]);
+
+
+  const handlePasteText=useCallback(async()=>{
+    if(!pasteTextContent.trim())return;
+    const datePrefix=pasteTextDate?pasteTextDate+"_":"";
+    const titlePart=pasteTextTitle.trim()||"File Note";
+    const filename=datePrefix+titlePart;
+    setShowPasteText(false);setPasteTextContent("");setPasteTextDate("");setPasteTextTitle("");
+    await processEvidence(pasteTextContent.trim(),filename,"text/plain");
+  },[pasteTextContent,pasteTextDate,pasteTextTitle]);
+
+  const processEvidence=useCallback(async(content,filename,mediaType,isUrl=false)=>{
+    setProcessing(true);setProcessingMsg(`Reading ${filename}…`);
+    try{
+      const isImage=mediaType?.startsWith("image/");const isPdf=mediaType==="application/pdf";
+      let userMessage;
+      if(isImage){userMessage={role:"user",content:[{type:"image",source:{type:"base64",media_type:mediaType,data:content}},{type:"text",text:`Analyse this uploaded image as evidence. Filename: ${filename}`}]};}
+      else if(isPdf){userMessage={role:"user",content:[{type:"document",source:{type:"base64",media_type:"application/pdf",data:content}},{type:"text",text:`Analyse this uploaded document as evidence. Filename: ${filename}`}]};}
+      else{userMessage={role:"user",content:`Analyse this evidence. ${isUrl?"Source URL: "+filename:"Filename: "+filename}\n\nContent:\n${content}`};}
+      const nextStepsText=typeof dossier?.next_steps==="string"?dossier.next_steps:Array.isArray(dossier?.next_steps)?dossier.next_steps.join("\n"):"";

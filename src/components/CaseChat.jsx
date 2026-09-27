@@ -1,4 +1,4 @@
-import { useState, useRef } from "react";
+import { useState, useRef, useEffect } from "react";
 
 const NAVY = "#00274d", YELLOW = "#ffc72c", WHITE = "#ffffff", PANEL = "#002a57", BORDER = "#003a6e", LIGHT = "#e8eef4";
 
@@ -65,13 +65,83 @@ function MarkdownText({ text, color }) {
 }
 
 // Chat-with-case panel. Renders inline within the dossier view (as a Panel
-// child) once a case has been saved. Streams responses from /api/case-chat.
+// child) once a case has been saved. Streams responses from /api/case-chat,
+// loads prior history on mount, and lets the user edit or delete their own
+// messages (edit removes the message and its reply, then refills the input
+// so it can be resent — matching how most chat tools handle "edit").
 export default function CaseChat({ caseId }) {
-  const [messages, setMessages] = useState([]); // { role, content }
+  const [messages, setMessages] = useState([]); // { id, role, content }
   const [input, setInput] = useState("");
   const [isStreaming, setIsStreaming] = useState(false);
   const [error, setError] = useState("");
+  const [loadingHistory, setLoadingHistory] = useState(true);
+  const [hoveredId, setHoveredId] = useState(null);
   const bottomRef = useRef(null);
+  const inputRef = useRef(null);
+
+  // Load existing history when the panel mounts (or the case changes).
+  useEffect(() => {
+    if (!caseId) return;
+    let cancelled = false;
+    setLoadingHistory(true);
+    fetch(`/api/case-chat?caseId=${encodeURIComponent(caseId)}`)
+      .then((r) => r.json())
+      .then((data) => {
+        if (cancelled) return;
+        if (Array.isArray(data.messages)) {
+          setMessages(data.messages.map((m) => ({ id: m.id, role: m.role, content: m.content })));
+        }
+      })
+      .catch(() => {
+        // Silently ignore — the chat still works for new messages even if
+        // history fails to load; not worth blocking on.
+      })
+      .finally(() => {
+        if (!cancelled) setLoadingHistory(false);
+      });
+    return () => { cancelled = true; };
+  }, [caseId]);
+
+  async function deleteMessage(id) {
+    if (!id) return;
+    setMessages((prev) => prev.filter((m) => m.id !== id));
+    try {
+      await fetch("/api/case-chat", {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ caseId, messageId: id }),
+      });
+    } catch {
+      // If the delete fails server-side, the message will simply reappear
+      // next time history is reloaded — acceptable, not worth a retry loop.
+    }
+  }
+
+  async function handleEdit(msg, index) {
+    // Editing a user message removes it and its immediate reply (if any),
+    // then refills the input so the person can adjust and resend — matching
+    // the edit-and-regenerate pattern used elsewhere, and correctly pruning
+    // stale context rather than leaving a stale reply behind.
+    const next = messages[index + 1];
+    const idsToDelete = [msg.id];
+    if (next && next.role === "assistant") idsToDelete.push(next.id);
+
+    setMessages((prev) => prev.filter((m) => !idsToDelete.includes(m.id)));
+    setInput(msg.content);
+    inputRef.current?.focus();
+
+    for (const id of idsToDelete) {
+      try {
+        await fetch("/api/case-chat", {
+          method: "DELETE",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ caseId, messageId: id }),
+        });
+      } catch {
+        // Same reasoning as deleteMessage above.
+      }
+    }
+  }
 
   async function sendMessage() {
     const text = input.trim();
@@ -79,8 +149,8 @@ export default function CaseChat({ caseId }) {
 
     setError("");
     setInput("");
-    setMessages((prev) => [...prev, { role: "user", content: text }]);
-    setMessages((prev) => [...prev, { role: "assistant", content: "" }]);
+    setMessages((prev) => [...prev, { id: null, role: "user", content: text }]);
+    setMessages((prev) => [...prev, { id: null, role: "assistant", content: "" }]);
     setIsStreaming(true);
 
     try {
@@ -113,10 +183,39 @@ export default function CaseChat({ caseId }) {
 
           try {
             const parsed = JSON.parse(data);
+
             if (parsed.error) {
-              setError(parsed.error);
+              setMessages((prev) => {
+                const next = [...prev];
+                next[next.length - 1] = {
+                  ...next[next.length - 1],
+                  content: `Something went wrong: ${parsed.error}`,
+                };
+                return next;
+              });
               continue;
             }
+
+            if (parsed.userMessageId) {
+              setMessages((prev) => {
+                const next = [...prev];
+                // The user message is the second-to-last entry at this point.
+                const idx = next.length - 2;
+                if (idx >= 0) next[idx] = { ...next[idx], id: parsed.userMessageId };
+                return next;
+              });
+              continue;
+            }
+
+            if (parsed.assistantMessageId) {
+              setMessages((prev) => {
+                const next = [...prev];
+                next[next.length - 1] = { ...next[next.length - 1], id: parsed.assistantMessageId };
+                return next;
+              });
+              continue;
+            }
+
             if (parsed.text) {
               setMessages((prev) => {
                 const next = [...prev];
@@ -131,7 +230,14 @@ export default function CaseChat({ caseId }) {
         }
       }
     } catch (e) {
-      setError("Something went wrong sending that message. Please try again.");
+      setMessages((prev) => {
+        const next = [...prev];
+        next[next.length - 1] = {
+          ...next[next.length - 1],
+          content: "Something went wrong sending that message. Please try again.",
+        };
+        return next;
+      });
     } finally {
       setIsStreaming(false);
       bottomRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -139,41 +245,67 @@ export default function CaseChat({ caseId }) {
   }
 
   function handleKeyDown(e) {
-    if (e.key === "Enter" && !e.shiftKey) {
+    if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
       e.preventDefault();
       sendMessage();
     }
   }
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", height: 420 }}>
+    <div style={{ display: "flex", flexDirection: "column", height: 560 }}>
       <div style={{ flex: 1, overflowY: "auto", marginBottom: 10, paddingRight: 2 }}>
-        {messages.length === 0 && (
+        {loadingHistory && (
+          <p style={{ margin: 0, fontSize: 12, color: "#7a96b0" }}>Loading previous conversation…</p>
+        )}
+        {!loadingHistory && messages.length === 0 && (
           <p style={{ margin: 0, fontSize: 12, color: "#7a96b0", lineHeight: 1.7 }}>
             Ask a question about this case, request a draft email, or explore a what-if. Answers are based on the evidence already filed in this case.
           </p>
         )}
         {messages.map((m, i) => (
           <div
-            key={i}
-            style={{
-              maxWidth: "85%",
-              marginLeft: m.role === "user" ? "auto" : 0,
-              marginBottom: 8,
-              background: m.role === "user" ? YELLOW : "#001e3d",
-              color: m.role === "user" ? NAVY : LIGHT,
-              border: m.role === "user" ? "none" : `1px solid ${BORDER}`,
-              borderRadius: 10,
-              padding: "8px 11px",
-              fontSize: 13,
-              lineHeight: 1.6,
-              whiteSpace: m.role === "user" ? "pre-wrap" : "normal",
-            }}
+            key={m.id ?? `pending-${i}`}
+            onMouseEnter={() => setHoveredId(m.id ?? `pending-${i}`)}
+            onMouseLeave={() => setHoveredId(null)}
+            style={{ position: "relative", maxWidth: "85%", marginLeft: m.role === "user" ? "auto" : 0, marginBottom: 8 }}
           >
-            {m.role === "assistant" && m.content ? (
-              <MarkdownText text={m.content} color={LIGHT} />
-            ) : (
-              m.content || (isStreaming && i === messages.length - 1 ? "…" : "")
+            <div
+              style={{
+                background: m.role === "user" ? YELLOW : "#001e3d",
+                color: m.role === "user" ? NAVY : LIGHT,
+                border: m.role === "user" ? "none" : `1px solid ${BORDER}`,
+                borderRadius: 10,
+                padding: "8px 11px",
+                fontSize: 13,
+                lineHeight: 1.6,
+                whiteSpace: m.role === "user" ? "pre-wrap" : "normal",
+              }}
+            >
+              {m.role === "assistant" && m.content ? (
+                <MarkdownText text={m.content} color={LIGHT} />
+              ) : (
+                m.content || (isStreaming && i === messages.length - 1 ? "…" : "")
+              )}
+            </div>
+            {hoveredId === (m.id ?? `pending-${i}`) && m.id && !isStreaming && (
+              <div style={{ display: "flex", gap: 4, justifyContent: m.role === "user" ? "flex-end" : "flex-start", marginTop: 3 }}>
+                {m.role === "user" && (
+                  <button
+                    onClick={() => handleEdit(m, i)}
+                    title="Edit and resend"
+                    style={{ background: "none", border: `1px solid ${BORDER}`, borderRadius: 4, padding: "2px 6px", color: "#7a96b0", fontSize: 10, cursor: "pointer" }}
+                  >
+                    ✏ Edit
+                  </button>
+                )}
+                <button
+                  onClick={() => deleteMessage(m.id)}
+                  title="Delete this message"
+                  style={{ background: "none", border: `1px solid ${BORDER}`, borderRadius: 4, padding: "2px 6px", color: "#7a96b0", fontSize: 10, cursor: "pointer" }}
+                >
+                  ✕ Delete
+                </button>
+              </div>
             )}
           </div>
         ))}
@@ -182,17 +314,20 @@ export default function CaseChat({ caseId }) {
         )}
         <div ref={bottomRef} />
       </div>
-      <div style={{ display: "flex", gap: 8 }}>
+      <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
         <textarea
+          ref={inputRef}
           value={input}
           onChange={(e) => setInput(e.target.value)}
           onKeyDown={handleKeyDown}
-          placeholder="Ask about this case…"
+          placeholder="Ask about this case… (Ctrl/Cmd+Enter to send)"
           disabled={isStreaming}
-          rows={1}
+          rows={3}
           style={{
-            flex: 1,
-            resize: "none",
+            width: "100%",
+            boxSizing: "border-box",
+            resize: "vertical",
+            minHeight: 64,
             background: "#001e3d",
             border: `1px solid ${BORDER}`,
             borderRadius: 8,
@@ -207,6 +342,7 @@ export default function CaseChat({ caseId }) {
           onClick={sendMessage}
           disabled={isStreaming || !input.trim()}
           style={{
+            alignSelf: "flex-end",
             background: YELLOW,
             color: NAVY,
             border: "none",
@@ -214,7 +350,7 @@ export default function CaseChat({ caseId }) {
             fontFamily: "'Poppins', sans-serif",
             fontWeight: 700,
             fontSize: 12,
-            padding: "8px 16px",
+            padding: "8px 20px",
             cursor: isStreaming || !input.trim() ? "not-allowed" : "pointer",
             opacity: isStreaming || !input.trim() ? 0.4 : 1,
             whiteSpace: "nowrap",

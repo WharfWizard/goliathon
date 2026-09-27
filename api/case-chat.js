@@ -1,36 +1,68 @@
 import { createClient } from '@supabase/supabase-js';
 
-// Chat-with-case endpoint. Loads the case's dossier + evidence + timeline from
-// Supabase fresh on every call, layers on the conversation history, and streams
-// the response back via Server-Sent Events so long answers (e.g. drafted letters)
-// render progressively instead of blocking on Vercel's 60s function timeout.
+// Chat-with-case endpoint. Handles three operations:
+//   GET    ?caseId=...              — load existing chat history for a case
+//   POST   {caseId, message}        — send a message, stream back the reply
+//   DELETE {caseId, messageId}      — remove one message (user or assistant)
 //
 // Uses raw fetch() against the Anthropic API directly, matching the pattern
 // already used in api/claude.js — no @anthropic-ai/sdk dependency needed.
 export default async function handler(req, res) {
-  if (req.method !== 'POST') {
-    return res.status(405).json({ error: 'Method not allowed' });
-  }
-
-  const { caseId, message } = req.body || {};
-  if (!caseId || !message) {
-    return res.status(400).json({ error: 'caseId and message are required' });
-  }
-
-  // NOTE: the Anthropic key is stored in Vercel as VITE_ANTHROPIC_API_KEY
-  // (not ANTHROPIC_API_KEY) — matching whatever name api/claude.js expects,
-  // confirmed against the project's actual Environment Variables settings.
-  if (!process.env.SUPABASE_URL || !process.env.SUPABASE_ANON_KEY || !process.env.VITE_ANTHROPIC_API_KEY) {
+  if (!process.env.SUPABASE_URL || !process.env.SUPABASE_ANON_KEY) {
     return res.status(500).json({ error: 'Missing required environment variables' });
   }
 
   const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_ANON_KEY);
 
-  // 1. Load the case's dossier + evidence + timeline.
-  // Field names confirmed against the actual dossiers schema on 8 Aug 2026:
-  // id, share_id (text), created_at, updated_at, case_title, overview,
-  // timeline (jsonb), witness_statement, next_steps, evidence (jsonb),
-  // decision_summary, key_questions, institution_response.
+  // --- GET: load existing chat history for a case, so the chat panel can
+  // show past messages again after a refresh or reopen. ---
+  if (req.method === 'GET') {
+    const { caseId } = req.query;
+    if (!caseId) return res.status(400).json({ error: 'caseId is required' });
+
+    const { data, error } = await supabase
+      .from('case_chat_messages')
+      .select('id, role, content, created_at')
+      .eq('case_id', caseId)
+      .order('created_at', { ascending: true });
+
+    if (error) return res.status(500).json({ error: error.message });
+    return res.status(200).json({ messages: data || [] });
+  }
+
+  // --- DELETE: remove one specific message. Requires both id and caseId to
+  // match, so a message can't be deleted by guessing an id alone. ---
+  if (req.method === 'DELETE') {
+    const { caseId, messageId } = req.body || {};
+    if (!caseId || !messageId) {
+      return res.status(400).json({ error: 'caseId and messageId are required' });
+    }
+
+    const { error } = await supabase
+      .from('case_chat_messages')
+      .delete()
+      .eq('id', messageId)
+      .eq('case_id', caseId);
+
+    if (error) return res.status(500).json({ error: error.message });
+    return res.status(200).json({ deleted: true });
+  }
+
+  if (req.method !== 'POST') {
+    return res.status(405).json({ error: 'Method not allowed' });
+  }
+
+  // --- POST: send a message, stream back Claude's reply. ---
+  const { caseId, message } = req.body || {};
+  if (!caseId || !message) {
+    return res.status(400).json({ error: 'caseId and message are required' });
+  }
+
+  if (!process.env.VITE_ANTHROPIC_API_KEY) {
+    return res.status(500).json({ error: 'Missing required environment variables' });
+  }
+
+  // 1. Load the case's dossier + evidence + timeline
   const { data: caseData, error: caseError } = await supabase
     .from('dossiers')
     .select('*')
@@ -52,13 +84,13 @@ export default async function handler(req, res) {
     return res.status(500).json({ error: 'Failed to load chat history' });
   }
 
-  // 3. Save the incoming user message before generating a response, so it's
-  // persisted even if the model call fails partway through.
-  const { error: insertUserError } = await supabase.from('case_chat_messages').insert({
-    case_id: caseId,
-    role: 'user',
-    content: message,
-  });
+  // 3. Save the incoming user message and capture its id, so we can send it
+  // back to the client for future edit/delete.
+  const { data: insertedUser, error: insertUserError } = await supabase
+    .from('case_chat_messages')
+    .insert({ case_id: caseId, role: 'user', content: message })
+    .select('id')
+    .single();
 
   if (insertUserError) {
     return res.status(500).json({ error: 'Failed to save message' });
@@ -97,13 +129,15 @@ export default async function handler(req, res) {
     return res.status(anthropicResponse.status).json({ error: errText });
   }
 
-  // 6. Stream the response back to our own client as SSE, parsing Anthropic's
-  // SSE format (event: content_block_delta, data: {"delta":{"text":"..."}})
-  // as we go, and re-emitting just the text in a simpler shape.
+  // 6. Stream the response back to our own client as SSE.
   res.setHeader('Content-Type', 'text/event-stream');
   res.setHeader('Cache-Control', 'no-cache');
   res.setHeader('Connection', 'keep-alive');
   res.flushHeaders?.();
+
+  // Tell the client the user message's id right away, so it can attach it
+  // to the message it already rendered optimistically.
+  res.write(`data: ${JSON.stringify({ userMessageId: insertedUser.id })}\n\n`);
 
   const reader = anthropicResponse.body.getReader();
   const decoder = new TextDecoder();
@@ -117,7 +151,7 @@ export default async function handler(req, res) {
 
       buffer += decoder.decode(value, { stream: true });
       const lines = buffer.split('\n');
-      buffer = lines.pop(); // keep any incomplete line for the next chunk
+      buffer = lines.pop();
 
       for (const line of lines) {
         if (!line.startsWith('data: ')) continue;
@@ -128,7 +162,7 @@ export default async function handler(req, res) {
         try {
           parsed = JSON.parse(data);
         } catch {
-          continue; // skip malformed chunk
+          continue;
         }
 
         if (parsed.type === 'content_block_delta' && parsed.delta?.text) {
@@ -142,17 +176,20 @@ export default async function handler(req, res) {
       }
     }
 
-    // 7. Save the assistant's full response once streaming completes
-    await supabase.from('case_chat_messages').insert({
-      case_id: caseId,
-      role: 'assistant',
-      content: fullResponse,
-    });
+    // 7. Save the assistant's full response and send its id back too.
+    const { data: insertedAssistant } = await supabase
+      .from('case_chat_messages')
+      .insert({ case_id: caseId, role: 'assistant', content: fullResponse })
+      .select('id')
+      .single();
+
+    if (insertedAssistant) {
+      res.write(`data: ${JSON.stringify({ assistantMessageId: insertedAssistant.id })}\n\n`);
+    }
 
     res.write('data: [DONE]\n\n');
     res.end();
   } catch (e) {
-    // If we already streamed partial content, save what we have so it's not lost.
     if (fullResponse) {
       await supabase.from('case_chat_messages').insert({
         case_id: caseId,

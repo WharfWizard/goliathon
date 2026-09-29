@@ -160,8 +160,23 @@ export default function CaseChat({ caseId }) {
         body: JSON.stringify({ caseId, message: text }),
       });
 
-      if (!response.ok || !response.body) {
-        throw new Error("Chat request failed");
+      if (!response.ok) {
+        // Try to read the server's actual error message (e.g. the daily
+        // limit notice) before falling back to a generic one — otherwise a
+        // deliberately clear, specific message from the server never
+        // reaches the person, and they just see "something went wrong".
+        let errMsg = "Something went wrong sending that message. Please try again.";
+        try {
+          const errData = await response.json();
+          if (errData?.error) errMsg = errData.error;
+        } catch {
+          // Response wasn't JSON — keep the generic fallback.
+        }
+        throw new Error(errMsg);
+      }
+
+      if (!response.body) {
+        throw new Error("Something went wrong sending that message. Please try again.");
       }
 
       const reader = response.body.getReader();
@@ -230,11 +245,15 @@ export default function CaseChat({ caseId }) {
         }
       }
     } catch (e) {
+      // The message that opened this try block (the user's own text) has
+      // already been rendered above; here we only need to replace the
+      // placeholder assistant bubble with the actual error, using the
+      // server's specific message when we have one.
       setMessages((prev) => {
         const next = [...prev];
         next[next.length - 1] = {
           ...next[next.length - 1],
-          content: "Something went wrong sending that message. Please try again.",
+          content: e.message || "Something went wrong sending that message. Please try again.",
         };
         return next;
       });

@@ -4,12 +4,18 @@ import { createClient } from '@supabase/supabase-js';
 // on each turn. Without a cap, every message in a long session resends the
 // FULL history plus the full case context every single time — so a 30-turn
 // conversation makes message 30 cost roughly 30x what message 1 cost, in
-// input tokens alone. This was the direct cause of an unexpectedly large
-// spend spike from one long, genuinely productive chat session. Full
-// history is still saved to and loaded from the database for the UI and
-// for edit/delete — this cap only limits what's actually sent to Claude as
-// context on each new turn.
+// input tokens alone. Full history is still saved to and loaded from the
+// database for the UI and for edit/delete — this cap only limits what's
+// actually sent to Claude as context on each new turn.
 const MAX_HISTORY_MESSAGES = 20;
+
+// Maximum number of user messages a single case can send within a rolling
+// 24-hour window. This exists so one case's sustained chat use can never,
+// on its own, consume the whole organisation's monthly Anthropic budget —
+// which is what happened before this was added. 30/day is a starting
+// point, not a carefully measured figure — worth tuning against real usage
+// data once you can see actual per-message cost in the Anthropic console.
+const MAX_MESSAGES_PER_CASE_PER_DAY = 30;
 
 // Chat-with-case endpoint. Handles three operations:
 //   GET    ?caseId=...              — load existing chat history for a case
@@ -73,7 +79,26 @@ export default async function handler(req, res) {
     return res.status(500).json({ error: 'Missing required environment variables' });
   }
 
-  // 1. Load the case's dossier + evidence + timeline
+  // 1. Check the per-case daily limit before doing anything expensive.
+  const oneDayAgo = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+  const { count: recentCount, error: countError } = await supabase
+    .from('case_chat_messages')
+    .select('id', { count: 'exact', head: true })
+    .eq('case_id', caseId)
+    .eq('role', 'user')
+    .gte('created_at', oneDayAgo);
+
+  if (countError) {
+    return res.status(500).json({ error: 'Failed to check usage limit' });
+  }
+
+  if (recentCount !== null && recentCount >= MAX_MESSAGES_PER_CASE_PER_DAY) {
+    return res.status(429).json({
+      error: `You've reached today's chat limit for this case (${MAX_MESSAGES_PER_CASE_PER_DAY} messages). This resets automatically as earlier messages age past 24 hours — please try again later today or tomorrow.`,
+    });
+  }
+
+  // 2. Load the case's dossier + evidence + timeline
   const { data: caseData, error: caseError } = await supabase
     .from('dossiers')
     .select('*')
@@ -84,7 +109,7 @@ export default async function handler(req, res) {
     return res.status(404).json({ error: 'Case not found' });
   }
 
-  // 2. Load prior chat history for this case (full history — used for the
+  // 3. Load prior chat history for this case (full history — used for the
   // UI/edit/delete elsewhere; only trimmed at the point we build the
   // request to Claude, below).
   const { data: history, error: historyError } = await supabase
@@ -97,7 +122,7 @@ export default async function handler(req, res) {
     return res.status(500).json({ error: 'Failed to load chat history' });
   }
 
-  // 3. Save the incoming user message and capture its id, so we can send it
+  // 4. Save the incoming user message and capture its id, so we can send it
   // back to the client for future edit/delete.
   const { data: insertedUser, error: insertUserError } = await supabase
     .from('case_chat_messages')
@@ -109,22 +134,22 @@ export default async function handler(req, res) {
     return res.status(500).json({ error: 'Failed to save message' });
   }
 
-  // 4. Build the system prompt from case context, marked as cacheable.
+  // 5. Build the system prompt from case context, marked as cacheable.
   // Anthropic caches everything up to and including the block carrying
   // cache_control — since the case context is identical on every turn of a
   // session, this means only the FIRST message in a session pays full
   // price for it; every message within the following 5 minutes (the cache
   // lifetime, refreshed on each use) reads it back at a large discount
-  // instead of reprocessing it from scratch. Minimum cacheable size is
-  // ~1024 tokens, which this prompt comfortably exceeds once evidence and
-  // timeline data are included.
+  // instead of reprocessing it. Minimum cacheable size is ~1024 tokens,
+  // which this prompt comfortably exceeds once evidence and timeline data
+  // are included.
   const systemPrompt = buildCaseContextPrompt(caseData);
 
-  // 5. Trim history to the most recent MAX_HISTORY_MESSAGES entries before
-  // sending — see the constant's comment above for why.
+  // 6. Trim history to the most recent MAX_HISTORY_MESSAGES entries before
+  // sending — see that constant's comment above for why.
   const trimmedHistory = history.slice(-MAX_HISTORY_MESSAGES);
 
-  // 6. Call Anthropic's API directly with stream: true
+  // 7. Call Anthropic's API directly with stream: true
   let anthropicResponse;
   try {
     anthropicResponse = await fetch('https://api.anthropic.com/v1/messages', {
@@ -156,7 +181,7 @@ export default async function handler(req, res) {
     return res.status(anthropicResponse.status).json({ error: errText });
   }
 
-  // 7. Stream the response back to our own client as SSE.
+  // 8. Stream the response back to our own client as SSE.
   res.setHeader('Content-Type', 'text/event-stream');
   res.setHeader('Cache-Control', 'no-cache');
   res.setHeader('Connection', 'keep-alive');
@@ -203,7 +228,7 @@ export default async function handler(req, res) {
       }
     }
 
-    // 8. Save the assistant's full response and send its id back too.
+    // 9. Save the assistant's full response and send its id back too.
     const { data: insertedAssistant } = await supabase
       .from('case_chat_messages')
       .insert({ case_id: caseId, role: 'assistant', content: fullResponse })

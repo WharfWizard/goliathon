@@ -1,5 +1,16 @@
 import { createClient } from '@supabase/supabase-js';
 
+// How many prior messages (user + assistant combined) to resend as context
+// on each turn. Without a cap, every message in a long session resends the
+// FULL history plus the full case context every single time — so a 30-turn
+// conversation makes message 30 cost roughly 30x what message 1 cost, in
+// input tokens alone. This was the direct cause of an unexpectedly large
+// spend spike from one long, genuinely productive chat session. Full
+// history is still saved to and loaded from the database for the UI and
+// for edit/delete — this cap only limits what's actually sent to Claude as
+// context on each new turn.
+const MAX_HISTORY_MESSAGES = 20;
+
 // Chat-with-case endpoint. Handles three operations:
 //   GET    ?caseId=...              — load existing chat history for a case
 //   POST   {caseId, message}        — send a message, stream back the reply
@@ -73,7 +84,9 @@ export default async function handler(req, res) {
     return res.status(404).json({ error: 'Case not found' });
   }
 
-  // 2. Load prior chat history for this case
+  // 2. Load prior chat history for this case (full history — used for the
+  // UI/edit/delete elsewhere; only trimmed at the point we build the
+  // request to Claude, below).
   const { data: history, error: historyError } = await supabase
     .from('case_chat_messages')
     .select('role, content')
@@ -96,10 +109,22 @@ export default async function handler(req, res) {
     return res.status(500).json({ error: 'Failed to save message' });
   }
 
-  // 4. Build the system prompt from case context
+  // 4. Build the system prompt from case context, marked as cacheable.
+  // Anthropic caches everything up to and including the block carrying
+  // cache_control — since the case context is identical on every turn of a
+  // session, this means only the FIRST message in a session pays full
+  // price for it; every message within the following 5 minutes (the cache
+  // lifetime, refreshed on each use) reads it back at a large discount
+  // instead of reprocessing it from scratch. Minimum cacheable size is
+  // ~1024 tokens, which this prompt comfortably exceeds once evidence and
+  // timeline data are included.
   const systemPrompt = buildCaseContextPrompt(caseData);
 
-  // 5. Call Anthropic's API directly with stream: true
+  // 5. Trim history to the most recent MAX_HISTORY_MESSAGES entries before
+  // sending — see the constant's comment above for why.
+  const trimmedHistory = history.slice(-MAX_HISTORY_MESSAGES);
+
+  // 6. Call Anthropic's API directly with stream: true
   let anthropicResponse;
   try {
     anthropicResponse = await fetch('https://api.anthropic.com/v1/messages', {
@@ -112,10 +137,12 @@ export default async function handler(req, res) {
       body: JSON.stringify({
         model: 'claude-sonnet-4-6',
         max_tokens: 2048,
-        system: systemPrompt,
+        system: [
+          { type: 'text', text: systemPrompt, cache_control: { type: 'ephemeral' } },
+        ],
         stream: true,
         messages: [
-          ...history.map((h) => ({ role: h.role, content: h.content })),
+          ...trimmedHistory.map((h) => ({ role: h.role, content: h.content })),
           { role: 'user', content: message },
         ],
       }),
@@ -129,7 +156,7 @@ export default async function handler(req, res) {
     return res.status(anthropicResponse.status).json({ error: errText });
   }
 
-  // 6. Stream the response back to our own client as SSE.
+  // 7. Stream the response back to our own client as SSE.
   res.setHeader('Content-Type', 'text/event-stream');
   res.setHeader('Cache-Control', 'no-cache');
   res.setHeader('Connection', 'keep-alive');
@@ -176,7 +203,7 @@ export default async function handler(req, res) {
       }
     }
 
-    // 7. Save the assistant's full response and send its id back too.
+    // 8. Save the assistant's full response and send its id back too.
     const { data: insertedAssistant } = await supabase
       .from('case_chat_messages')
       .insert({ case_id: caseId, role: 'assistant', content: fullResponse })

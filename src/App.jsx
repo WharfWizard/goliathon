@@ -1427,7 +1427,7 @@ export default function GoliathonApp(){
       <div style={{marginBottom:10}}>
         <button onClick={()=>setShowWelcome(true)} style={{background:"none",border:`1px solid ${BORDER}`,borderRadius:6,padding:"6px 16px",color:"#7a96b0",fontSize:12,cursor:"pointer",fontFamily:"'Poppins', sans-serif"}}>ℹ About Goliathon</button>
       </div>
-      <p style={{margin:0,fontSize:11,color:"#5a7a96"}}>Goliathon · Get SAFE (Support After Financial Exploitation) · Founded by Steve Conley · Academy of Life Planning · <a href="https://www.academyoflifeplanning.com/individuals/get-safe" style={{color:"#7a96b0"}}>academyoflifeplanning.com/individuals/get-safe</a> · <a href="/privacy" onClick={e=>{e.preventDefault();setShowPrivacy(true);window.history.pushState({},"","/privacy");}} style={{color:"#7a96b0"}}>Privacy Policy</a> · Educational use only. Not legal, financial, or mental-health advice.</p>
+      <p style={{margin:0,fontSize:11,color:"#5a7a96"}}>Goliathon · Get SAFE (Support After Financial Exploitation) · Founded by Steve Conley · Academy of Life Planning · <a href="https://www.academyoflifeplanning.com/individuals/get-safe" style={{color:"#7a96b0"}}>academyoflifeplanning.com/individuals/get-safe</a> · <a href="/privacy" onClick={e=>{e.preventDefault();setShowPrivacy(true);window.history.pushState({},"","/privacy");}} style={{color:"#7a96b0"}}>Privacy Policy</a> · <a href="https://buy.stripe.com/dRm28r0MU6k77bb1vleIw01" target="_blank" rel="noopener noreferrer" style={{color:"#7a96b0"}}>Support Get SAFE</a> · Educational use only. Not legal, financial, or mental-health advice.</p>
     </div>
 
     {showCamera&&(

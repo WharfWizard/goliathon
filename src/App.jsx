@@ -478,6 +478,46 @@ function StrengthMeter({dossier}){
   return(<div style={{background:PANEL,border:`1px solid ${BORDER}`,borderRadius:10,padding:"12px 16px",marginBottom:16}}><div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:8}}><span style={{fontSize:12,color:"#a0b4c8",fontFamily:"'Poppins', sans-serif",fontWeight:600}}>Case Strength</span><span style={{fontSize:12,color,fontFamily:"'Poppins', sans-serif",fontWeight:700}}>{label} · {score}%</span></div><div style={{height:6,background:"#001e3d",borderRadius:3,overflow:"hidden"}}><div style={{height:"100%",width:`${score}%`,background:color,borderRadius:3,transition:"width 0.6s ease"}}/></div></div>);
 }
 
+function AboutSections(){
+  const h={fontFamily:"'Poppins', sans-serif",fontWeight:700,fontSize:15,color:YELLOW,margin:"0 0 8px"};
+  const p={fontSize:13,color:LIGHT,lineHeight:1.8,margin:"0 0 10px"};
+  const link={color:YELLOW};
+  const block={marginBottom:26};
+  const list={fontSize:13,color:LIGHT,lineHeight:1.8,margin:"0 0 10px",paddingLeft:18};
+  return(<div style={{textAlign:"left",marginTop:40,borderTop:"1px solid "+BORDER,paddingTop:30}}>
+    <div style={block}>
+      <h3 style={h}>About Get SAFE</h3>
+      <p style={p}>Get SAFE (Support After Financial Exploitation) is the Academy of Life Planning's free public-interest programme for people affected by financial exploitation and institutional harm. It offers free AI-supported tools, structured training and practical methods to help you understand what has happened, organise your information and decide what to do next.</p>
+      <p style={p}>We do not take over your case. We help you become more capable of managing it.</p>
+      <p style={p}><a href="https://www.academyoflifeplanning.com/individuals/get-safe" target="_blank" rel="noopener noreferrer" style={link}>Learn more about Get SAFE</a></p>
+    </div>
+    <div style={block}>
+      <h3 style={h}>About Goliathon</h3>
+      <p style={p}>Goliathon is Get SAFE's evidence tool. You add your documents, and it reads them, builds a timeline, a case summary and key questions, and lets you ask questions about your own evidence. It keeps what your documents show separate from what it thinks they may mean, and everything it writes is an interpretation for you to check, not a legal or factual finding.</p>
+      <p style={p}>Goliathon is educational and builds your capability. It does not give legal, financial or mental-health advice, and it is not case representation.</p>
+    </div>
+    <div style={block}>
+      <h3 style={h}>Who pays for Goliathon</h3>
+      <p style={p}>Goliathon is free to use. The Academy of Life Planning Ltd pays for maintaining the app and for the AI processing behind it, which Anthropic (the company that makes Claude) charges us for. Every document Goliathon reads and every question you ask uses some of that. To keep it sustainable for everyone, each case has a daily limit on chat messages.</p>
+    </div>
+    <div style={block}>
+      <h3 style={h}>Your privacy</h3>
+      <ul style={list}>
+        <li>No account is needed. We do not use tracking cookies or advertising, and we do not sell data.</li>
+        <li>Your dossier is saved under a random ID that is not linked to your identity. Your evidence and chat messages are sent to Claude (Anthropic) to produce the analysis.</li>
+        <li>You can ask us to delete your dossier at any time.</li>
+      </ul>
+      <p style={p}><a href="/privacy" target="_blank" rel="noopener noreferrer" style={link}>Read the full privacy notice</a></p>
+    </div>
+    <div style={block}>
+      <h3 style={h}>Support Get SAFE</h3>
+      <p style={p}>You never need to contribute to use Goliathon. If it has helped you, or you would like to help keep it available to others, you can make a voluntary contribution towards the running costs. It is a payment to the Academy of Life Planning Ltd, of which Get SAFE is a trading style. It is not a charitable donation, and nothing is provided in return.</p>
+      <p style={{margin:"0 0 10px"}}><a href="https://buy.stripe.com/dRm28r0MU6k77bb1vleIw01" target="_blank" rel="noopener noreferrer" style={{display:"inline-block",background:YELLOW,color:NAVY,borderRadius:8,fontFamily:"'Poppins', sans-serif",fontWeight:700,fontSize:12,padding:"9px 18px",textDecoration:"none",letterSpacing:0.5}}>Support Get SAFE</a></p>
+    </div>
+    <p style={{fontSize:12,color:"#7a96b0",lineHeight:1.7,margin:0}}>Questions? Email <a href="mailto:steve@academyoflifeplanning.com" style={link}>steve@academyoflifeplanning.com</a></p>
+  </div>);
+}
+
 function WelcomeScreen({onStart,onClose}){
   return(<div style={{fontFamily:"'Open Sans', sans-serif",background:NAVY,minHeight:"100vh",width:"100%",display:"flex",flexDirection:"column"}}>
     <div style={{background:NAVY,borderBottom:`3px solid ${YELLOW}`,padding:"16px 24px"}}><div style={{maxWidth:700,margin:"0 auto",display:"flex",alignItems:"center",gap:14}}><img src="/getsafe-logo.png" alt="Get SAFE" style={{width:44,height:44,objectFit:"contain"}}/><div><div style={{fontSize:9,letterSpacing:3,color:YELLOW,textTransform:"uppercase",fontFamily:"'Poppins', sans-serif"}}>Get SAFE · Academy of Life Planning</div><h1 style={{margin:0,fontFamily:"'Poppins', sans-serif",fontSize:24,fontWeight:800,color:WHITE}}>GOLIATHON</h1></div></div></div>
@@ -495,7 +535,7 @@ function WelcomeScreen({onStart,onClose}){
         <div style={{textAlign:"center"}}>
           <Btn onClick={onStart} fullWidth>Start Building My Case →</Btn>
           {onClose&&<button onClick={onClose} style={{marginTop:12,background:"none",border:"none",color:"#7a96b0",fontSize:12,cursor:"pointer",fontFamily:"'Open Sans', sans-serif"}}>← Back to my dossier</button>}
-          <p style={{margin:"12px 0 0",fontSize:11,color:"#5a7a96"}}>Free · No account required · Educational use only · Not legal advice</p>
+          <p style={{margin:"12px 0 0",fontSize:11,color:"#5a7a96"}}>Free · No account required · Educational use only · Not legal advice</p><AboutSections/>
         </div>
       </div>
     </div>

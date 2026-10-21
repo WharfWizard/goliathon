@@ -221,7 +221,7 @@ async function hashFile(content){
 function cleanNumbering(text){
   if(!text)return '';
   // Insert newline before numbered items if missing
-  let t=text.replace(/([^\n])(\d+\. )/g,(m,prev,num)=>prev+'\n'+num);
+  let t=text.replace(/([.!?;:)])\s+(\d{1,2}\. )(?=[A-Z(])/g,'$1\n$2');// only after sentence punctuation, and only 1-2 digit numbers, so years like 2026. are never split
   // Strip "1. 1." duplicate numbering
   t=t.replace(/^(\d+)\.\s+\1\.\s+/gm,'$1. ');
   t=t.replace(/^(\d+)\.\s+(\d+)\.\s+(?=\D)/gm,(m,a,b)=>a===b?a+'. ':m);
@@ -243,7 +243,7 @@ function pdfSection(doc,title,y,margin,contentWidth){
 
 function checkNewPage(doc,y,needed,logoB64,caseTitle,sectionTitle,pageNums){
   if(y+needed>280){
-    pdfAddFooter(doc,pageNums.current,999);
+    /* footers are drawn once the PDF is complete, when the real page total is known */
     doc.addPage();
     pageNums.current++;
     const newY=pdfAddHeader(doc,logoB64,caseTitle,sectionTitle);
@@ -329,7 +329,7 @@ async function downloadPdf(sectionKey,dossier){
 
     if(item.type==="timeline"){
       // Estimate height needed
-      const eventLines=doc.splitTextToSize(item.event||"",contentWidth-22);
+      doc.setFontSize(8.5);doc.setFont("helvetica","normal");const eventLines=doc.splitTextToSize(item.event||"",contentWidth-22);
       const neededH=6+eventLines.length*4.5+(item.evidence?4:0)+4;
       y=checkNewPage(doc,y,neededH,logoB64,caseTitle,sec.title,pageNums);
       // Number circle
@@ -447,7 +447,7 @@ async function downloadPdf(sectionKey,dossier){
   }
 
   // Fix total pages in footers — render footer on last page
-  pdfAddFooter(doc,pageNums.current,pageNums.current);
+  const totalPages=doc.internal.getNumberOfPages();for(let p=1;p<=totalPages;p++){doc.setPage(p);pdfAddFooter(doc,p,totalPages);}
 
   const filename=`${caseTitle.replace(/[^a-z0-9]/gi,"_")}_${sectionKey}.pdf`;
   doc.save(filename);

@@ -330,7 +330,7 @@ async function downloadPdf(sectionKey,dossier){
 
   for(const item of items){
     if(item.type==="sectionHeader"){
-      {const nextItem=items[items.indexOf(item)+1];const lead=nextItem&&nextItem.type==="evidence"?70:nextItem&&nextItem.type==="timeline"?40:30;y=checkNewPage(doc,y,lead,logoB64,caseTitle,sec.title,pageNums);}
+      {const nextItem=items[items.indexOf(item)+1];const lead=nextItem&&nextItem.type==="evidence"?(()=>{const wl=(t,w,fs)=>t?Math.ceil(clean(t).length/Math.floor(w/(fs*0.23)))+1:0;const tl=wl("#"+String(nextItem.num).padStart(3,"0")+"  "+(nextItem.title||""),contentWidth-10,9);const sl=wl(nextItem.summary,contentWidth-18,8.5);const fl=wl(nextItem.factsObserved,contentWidth-18,7.5);const gl=wl(nextItem.significance,contentWidth-18,7.5);return 16+6+tl*5+3+7+sl*5+(fl?4.5+fl*4.5+2:0)+(gl?4.5+gl*4.5+2:0)+5+4;})():nextItem&&nextItem.type==="timeline"?40:30;y=checkNewPage(doc,y,lead,logoB64,caseTitle,sec.title,pageNums);}
       y+=4;
       y=pdfSection(doc,item.title,y,margin,contentWidth);
       y+=4;

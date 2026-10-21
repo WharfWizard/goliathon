@@ -205,7 +205,7 @@ function clean(str){
   if(!str)return '';
   return str
     .replace(/^&\s*/,'')           // strip leading & (with or without space)
-    .replace(/&.*$/,'')             // strip anything from & onwards (mid-string artefact)
+    .replace(/\s&\s*$/,'')          // strip only a dangling & at the very end; real ampersands inside text are kept
     .replace(/;\s*'[^']*$/,'')     // strip trailing incomplete quoted token e.g. ; 'court repossess
     .replace(/;\s*"[^"]*$/,'')     // same for double quotes
     .trim()

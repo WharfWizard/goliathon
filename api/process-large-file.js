@@ -58,7 +58,7 @@ export default async function handler(req, res) {
       },
       body: JSON.stringify({
         model: 'claude-sonnet-4-6',
-        max_tokens: 4000,
+        max_tokens: 8000,
         system: SYSTEM,
         messages: [
           {
@@ -81,6 +81,9 @@ export default async function handler(req, res) {
   }
 
   const data = await anthropicResponse.json();
+  if (data.stop_reason === 'max_tokens') {
+    return res.status(502).json({ error: 'The AI response was too long and was cut off before it finished, so nothing was added. Please try again. If it keeps happening, upload a shorter document.' });
+  }
   const responseText = data.content?.[0]?.text || '';
 
   // Return the same shape processEvidence already expects from /api/claude,

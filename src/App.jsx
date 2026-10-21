@@ -265,7 +265,7 @@ async function downloadPdf(sectionKey,dossier){
     overview:{title:"Case Overview",data:()=>[{type:"body",text:dossier.overview||"No overview available."}]},
     timeline:{title:"Chronological Timeline",data:()=>(dossier.timeline||[]).map((t,i)=>({type:"timeline",num:i+1,date:t.date||"Date unknown",event:t.event,evidence:t.evidence}))},
     statement:{title:"Witness Statement",data:()=>[{type:"body",text:dossier.witness_statement||"No statement available."}]},
-    evidence:{title:`Evidence Library — ${(dossier.evidence||[]).length} Items`,data:()=>(dossier.evidence||[]).map((e,i)=>({type:"evidence",num:i+1,title:e.title,date:e.date,docType:e.type,summary:e.summary,factsObserved:e.facts_observed,significance:e.significance,redFlags:e.red_flags}))},
+    evidence:{title:`Evidence Library — ${(dossier.evidence||[]).length} ${(dossier.evidence||[]).length===1?"Item":"Items"}`,data:()=>(dossier.evidence||[]).map((e,i)=>({type:"evidence",num:i+1,title:e.title,date:e.date,docType:e.type,summary:e.summary,factsObserved:e.facts_observed,significance:e.significance,redFlags:e.red_flags}))},
     nextsteps:{title:"Next Steps",data:()=>[{type:"body",text:dossier.next_steps||"No next steps available."}]},
     institutionresponse:{title:"The Strongest Answer to Your Case",data:()=>[{type:"body",text:(dossier.institution_response?"Based strictly on the evidence filed so far:\n\n"+dossier.institution_response:"Not yet generated.")+"\n\n"+AI_DISCLAIMER_PDF_TEXT}]},
     keyquestions:{title:"Key Questions in This Case",data:()=>[{type:"body",text:(dossier.key_questions||"No key questions identified yet.")+"\n\n"+AI_DISCLAIMER_PDF_TEXT}]},
@@ -278,7 +278,7 @@ async function downloadPdf(sectionKey,dossier){
       (dossier.timeline||[]).forEach((t,i)=>items.push({type:"timeline",num:i+1,date:t.date||"Date unknown",event:t.event,evidence:t.evidence}));
       items.push({type:"sectionHeader",title:"Witness Statement"});
       items.push({type:"body",text:dossier.witness_statement||""});
-      items.push({type:"sectionHeader",title:`Evidence Library — ${(dossier.evidence||[]).length} Items`});
+      items.push({type:"sectionHeader",title:`Evidence Library — ${(dossier.evidence||[]).length} ${(dossier.evidence||[]).length===1?"Item":"Items"}`});
       (dossier.evidence||[]).forEach((e,i)=>items.push({type:"evidence",num:i+1,title:e.title,date:e.date,docType:e.type,summary:e.summary,factsObserved:e.facts_observed,significance:e.significance,redFlags:e.red_flags}));
       items.push({type:"sectionHeader",title:"Next Steps"});
       items.push({type:"body",text:dossier.next_steps||""});
@@ -308,7 +308,7 @@ async function downloadPdf(sectionKey,dossier){
 
   for(const item of items){
     if(item.type==="sectionHeader"){
-      y=checkNewPage(doc,y,16,logoB64,caseTitle,sec.title,pageNums);
+      {const nextItem=items[items.indexOf(item)+1];const lead=nextItem&&nextItem.type==="evidence"?70:nextItem&&nextItem.type==="timeline"?40:30;y=checkNewPage(doc,y,lead,logoB64,caseTitle,sec.title,pageNums);}
       y+=4;
       y=pdfSection(doc,item.title,y,margin,contentWidth);
       y+=4;

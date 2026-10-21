@@ -175,7 +175,7 @@ function pdfAddHeader(doc,logoB64,caseTitle,sectionTitle){
     doc.setTextColor(255,255,255);
     doc.setFontSize(9);
     doc.setFont("helvetica","bold");
-    doc.text(caseTitle,margin,33);
+    {let cf=9;while(cf>7&&doc.getTextWidth(caseTitle)>W-2*margin){cf-=0.5;doc.setFontSize(cf);}let ct=caseTitle;if(doc.getTextWidth(ct)>W-2*margin){while(ct.length>4&&doc.getTextWidth(ct+"...")>W-2*margin){ct=ct.slice(0,-1);}ct=ct.trimEnd()+"...";}doc.text(ct,margin,33);}
   }
   return caseTitle?38:33;
 }
@@ -205,7 +205,7 @@ function clean(str){
   if(!str)return '';
   return str
     .replace(/^&\s*/,'')           // strip leading & (with or without space)
-    .replace(/&.*$/,'')             // strip anything from & onwards (mid-string artefact)
+    .replace(/\s&\s*$/,'')          // strip only a dangling & at the very end; real ampersands inside text are kept
     .replace(/;\s*'[^']*$/,'')     // strip trailing incomplete quoted token e.g. ; 'court repossess
     .replace(/;\s*"[^"]*$/,'')     // same for double quotes
     .trim()
@@ -221,7 +221,7 @@ async function hashFile(content){
 function cleanNumbering(text){
   if(!text)return '';
   // Insert newline before numbered items if missing
-  let t=text.replace(/([^\n])(\d+\. )/g,(m,prev,num)=>prev+'\n'+num);
+  let t=text.replace(/([.!?;:)])\s+(\d{1,2}\. )(?=[A-Z(])/g,'$1\n$2');// only after sentence punctuation, and only 1-2 digit numbers, so years like 2026. are never split
   // Strip "1. 1." duplicate numbering
   t=t.replace(/^(\d+)\.\s+\1\.\s+/gm,'$1. ');
   t=t.replace(/^(\d+)\.\s+(\d+)\.\s+(?=\D)/gm,(m,a,b)=>a===b?a+'. ':m);
@@ -243,7 +243,7 @@ function pdfSection(doc,title,y,margin,contentWidth){
 
 function checkNewPage(doc,y,needed,logoB64,caseTitle,sectionTitle,pageNums){
   if(y+needed>280){
-    pdfAddFooter(doc,pageNums.current,999);
+    /* footers are drawn once the PDF is complete, when the real page total is known */
     doc.addPage();
     pageNums.current++;
     const newY=pdfAddHeader(doc,logoB64,caseTitle,sectionTitle);
@@ -265,7 +265,7 @@ async function downloadPdf(sectionKey,dossier){
     overview:{title:"Case Overview",data:()=>[{type:"body",text:dossier.overview||"No overview available."}]},
     timeline:{title:"Chronological Timeline",data:()=>(dossier.timeline||[]).map((t,i)=>({type:"timeline",num:i+1,date:t.date||"Date unknown",event:t.event,evidence:t.evidence}))},
     statement:{title:"Witness Statement",data:()=>[{type:"body",text:dossier.witness_statement||"No statement available."}]},
-    evidence:{title:`Evidence Library — ${(dossier.evidence||[]).length} Items`,data:()=>(dossier.evidence||[]).map((e,i)=>({type:"evidence",num:i+1,title:e.title,date:e.date,docType:e.type,summary:e.summary,factsObserved:e.facts_observed,significance:e.significance,redFlags:e.red_flags}))},
+    evidence:{title:`Evidence Library — ${(dossier.evidence||[]).length} ${(dossier.evidence||[]).length===1?"Item":"Items"}`,data:()=>(dossier.evidence||[]).map((e,i)=>({type:"evidence",num:i+1,title:e.title,date:e.date,docType:e.type,summary:e.summary,factsObserved:e.facts_observed,significance:e.significance,redFlags:e.red_flags}))},
     nextsteps:{title:"Next Steps",data:()=>[{type:"body",text:dossier.next_steps||"No next steps available."}]},
     institutionresponse:{title:"The Strongest Answer to Your Case",data:()=>[{type:"body",text:(dossier.institution_response?"Based strictly on the evidence filed so far:\n\n"+dossier.institution_response:"Not yet generated.")+"\n\n"+AI_DISCLAIMER_PDF_TEXT}]},
     keyquestions:{title:"Key Questions in This Case",data:()=>[{type:"body",text:(dossier.key_questions||"No key questions identified yet.")+"\n\n"+AI_DISCLAIMER_PDF_TEXT}]},
@@ -278,7 +278,7 @@ async function downloadPdf(sectionKey,dossier){
       (dossier.timeline||[]).forEach((t,i)=>items.push({type:"timeline",num:i+1,date:t.date||"Date unknown",event:t.event,evidence:t.evidence}));
       items.push({type:"sectionHeader",title:"Witness Statement"});
       items.push({type:"body",text:dossier.witness_statement||""});
-      items.push({type:"sectionHeader",title:`Evidence Library — ${(dossier.evidence||[]).length} Items`});
+      items.push({type:"sectionHeader",title:`Evidence Library — ${(dossier.evidence||[]).length} ${(dossier.evidence||[]).length===1?"Item":"Items"}`});
       (dossier.evidence||[]).forEach((e,i)=>items.push({type:"evidence",num:i+1,title:e.title,date:e.date,docType:e.type,summary:e.summary,factsObserved:e.facts_observed,significance:e.significance,redFlags:e.red_flags}));
       items.push({type:"sectionHeader",title:"Next Steps"});
       items.push({type:"body",text:dossier.next_steps||""});
@@ -308,7 +308,7 @@ async function downloadPdf(sectionKey,dossier){
 
   for(const item of items){
     if(item.type==="sectionHeader"){
-      y=checkNewPage(doc,y,16,logoB64,caseTitle,sec.title,pageNums);
+      {const nextItem=items[items.indexOf(item)+1];const lead=nextItem&&nextItem.type==="evidence"?70:nextItem&&nextItem.type==="timeline"?40:30;y=checkNewPage(doc,y,lead,logoB64,caseTitle,sec.title,pageNums);}
       y+=4;
       y=pdfSection(doc,item.title,y,margin,contentWidth);
       y+=4;
@@ -329,8 +329,8 @@ async function downloadPdf(sectionKey,dossier){
 
     if(item.type==="timeline"){
       // Estimate height needed
-      const eventLines=doc.splitTextToSize(item.event||"",contentWidth-22);
-      const neededH=6+eventLines.length*4.5+(item.evidence?4:0)+4;
+      doc.setFontSize(8.5);doc.setFont("helvetica","normal");const eventLines=doc.splitTextToSize(item.event||"",contentWidth-22);
+      const neededH=6+eventLines.length*4.5+(item.evidence?(doc.setFontSize(7),Math.max(1,doc.splitTextToSize(item.evidence,contentWidth-22).length)*3.5+0.5):0)+4;
       y=checkNewPage(doc,y,neededH,logoB64,caseTitle,sec.title,pageNums);
       // Number circle
       doc.setFillColor(255,199,44);
@@ -347,7 +347,7 @@ async function downloadPdf(sectionKey,dossier){
       // Evidence ref
       if(item.evidence){
         doc.setTextColor(90,122,150);doc.setFontSize(7);
-        doc.text(item.evidence,margin+10,ey);ey+=3.5;
+        for(const rl of doc.splitTextToSize(item.evidence,contentWidth-22)){doc.text(rl,margin+10,ey);ey+=3.5;}
       }
       // Connector line
       if(item.num<(dossier.timeline||[]).length){
@@ -447,7 +447,7 @@ async function downloadPdf(sectionKey,dossier){
   }
 
   // Fix total pages in footers — render footer on last page
-  pdfAddFooter(doc,pageNums.current,pageNums.current);
+  const totalPages=doc.internal.getNumberOfPages();for(let p=1;p<=totalPages;p++){doc.setPage(p);pdfAddFooter(doc,p,totalPages);}
 
   const filename=`${caseTitle.replace(/[^a-z0-9]/gi,"_")}_${sectionKey}.pdf`;
   doc.save(filename);

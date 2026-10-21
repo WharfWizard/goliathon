@@ -175,7 +175,7 @@ function pdfAddHeader(doc,logoB64,caseTitle,sectionTitle){
     doc.setTextColor(255,255,255);
     doc.setFontSize(9);
     doc.setFont("helvetica","bold");
-    doc.text(caseTitle,margin,33);
+    {let cf=9;while(cf>7&&doc.getTextWidth(caseTitle)>W-2*margin){cf-=0.5;doc.setFontSize(cf);}let ct=caseTitle;if(doc.getTextWidth(ct)>W-2*margin){while(ct.length>4&&doc.getTextWidth(ct+"...")>W-2*margin){ct=ct.slice(0,-1);}ct=ct.trimEnd()+"...";}doc.text(ct,margin,33);}
   }
   return caseTitle?38:33;
 }
@@ -330,7 +330,7 @@ async function downloadPdf(sectionKey,dossier){
     if(item.type==="timeline"){
       // Estimate height needed
       doc.setFontSize(8.5);doc.setFont("helvetica","normal");const eventLines=doc.splitTextToSize(item.event||"",contentWidth-22);
-      const neededH=6+eventLines.length*4.5+(item.evidence?4:0)+4;
+      const neededH=6+eventLines.length*4.5+(item.evidence?(doc.setFontSize(7),Math.max(1,doc.splitTextToSize(item.evidence,contentWidth-22).length)*3.5+0.5):0)+4;
       y=checkNewPage(doc,y,neededH,logoB64,caseTitle,sec.title,pageNums);
       // Number circle
       doc.setFillColor(255,199,44);
@@ -347,7 +347,7 @@ async function downloadPdf(sectionKey,dossier){
       // Evidence ref
       if(item.evidence){
         doc.setTextColor(90,122,150);doc.setFontSize(7);
-        doc.text(item.evidence,margin+10,ey);ey+=3.5;
+        for(const rl of doc.splitTextToSize(item.evidence,contentWidth-22)){doc.text(rl,margin+10,ey);ey+=3.5;}
       }
       // Connector line
       if(item.num<(dossier.timeline||[]).length){

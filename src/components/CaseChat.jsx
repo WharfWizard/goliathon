@@ -1,4 +1,5 @@
 import { useState, useRef, useEffect } from "react";
+import { aiHeaders, notifyAiError } from "../lib/userKey";
 
 const NAVY = "#00274d", YELLOW = "#ffc72c", WHITE = "#ffffff", PANEL = "#002a57", BORDER = "#003a6e", LIGHT = "#e8eef4";
 
@@ -154,9 +155,10 @@ export default function CaseChat({ caseId }) {
     setIsStreaming(true);
 
     try {
+      // aiHeaders adds the member's own Anthropic key, if they've added one.
       const response = await fetch("/api/case-chat", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: aiHeaders({ "Content-Type": "application/json" }),
         body: JSON.stringify({ caseId, message: text }),
       });
 
@@ -169,6 +171,9 @@ export default function CaseChat({ caseId }) {
         try {
           const errData = await response.json();
           if (errData?.error) errMsg = errData.error;
+          // Opens the "use your own key" panel when the shared allowance or
+          // daily chat limit is reached, or the member's key has a problem.
+          notifyAiError(errData);
         } catch {
           // Response wasn't JSON — keep the generic fallback.
         }

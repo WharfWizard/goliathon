@@ -2,28 +2,36 @@ import { createClient } from '@supabase/supabase-js';
 
 // How many prior messages (user + assistant combined) to resend as context
 // on each turn. Without a cap, every message in a long session resends the
-// FULL history plus the full case context every single time — so a 30-turn
+// FULL history plus the full case context every single time - so a 30-turn
 // conversation makes message 30 cost roughly 30x what message 1 cost, in
 // input tokens alone. Full history is still saved to and loaded from the
-// database for the UI and for edit/delete — this cap only limits what's
+// database for the UI and for edit/delete - this cap only limits what's
 // actually sent to Claude as context on each new turn.
 const MAX_HISTORY_MESSAGES = 20;
 
 // Maximum number of user messages a single case can send within a rolling
 // 24-hour window. This exists so one case's sustained chat use can never,
-// on its own, consume the whole organisation's monthly Anthropic budget —
+// on its own, consume the whole organisation's monthly Anthropic budget  - 
 // which is what happened before this was added. 30/day is a starting
-// point, not a carefully measured figure — worth tuning against real usage
+// point, not a carefully measured figure - worth tuning against real usage
 // data once you can see actual per-message cost in the Anthropic console.
 const MAX_MESSAGES_PER_CASE_PER_DAY = 30;
 
+// Locked down (28 Oct 2026): same origin check and key name as /api/claude,
+// plus token-only usage logging (search Vercel logs for "GOLIATHON_USAGE").
+const DEFAULT_ORIGINS = ['https://goliathon.app', 'https://www.goliathon.app'];
+const ALLOWED_ORIGINS = (process.env.ALLOWED_ORIGINS
+  ? process.env.ALLOWED_ORIGINS.split(',').map(s => s.trim()).filter(Boolean)
+  : DEFAULT_ORIGINS);
+const API_KEY = process.env.ANTHROPIC_API_KEY || process.env.VITE_ANTHROPIC_API_KEY;
+
 // Chat-with-case endpoint. Handles three operations:
-//   GET    ?caseId=...              — load existing chat history for a case
-//   POST   {caseId, message}        — send a message, stream back the reply
-//   DELETE {caseId, messageId}      — remove one message (user or assistant)
+//   GET    ?caseId=...              - load existing chat history for a case
+//   POST   {caseId, message}        - send a message, stream back the reply
+//   DELETE {caseId, messageId}      - remove one message (user or assistant)
 //
 // Uses raw fetch() against the Anthropic API directly, matching the pattern
-// already used in api/claude.js — no @anthropic-ai/sdk dependency needed.
+// already used in api/claude.js - no @anthropic-ai/sdk dependency needed.
 export default async function handler(req, res) {
   if (!process.env.SUPABASE_URL || !process.env.SUPABASE_ANON_KEY) {
     return res.status(500).json({ error: 'Missing required environment variables' });
@@ -75,7 +83,13 @@ export default async function handler(req, res) {
     return res.status(400).json({ error: 'caseId and message are required' });
   }
 
-  if (!process.env.VITE_ANTHROPIC_API_KEY) {
+  // Only Goliathon's own pages may spend AI budget through this route.
+  const origin = req.headers.origin;
+  if (!origin || !ALLOWED_ORIGINS.includes(origin)) {
+    return res.status(403).json({ error: 'Not allowed' });
+  }
+
+  if (!API_KEY) {
     return res.status(500).json({ error: 'Missing required environment variables' });
   }
 
@@ -94,7 +108,7 @@ export default async function handler(req, res) {
 
   if (recentCount !== null && recentCount >= MAX_MESSAGES_PER_CASE_PER_DAY) {
     return res.status(429).json({
-      error: `You've reached today's chat limit for this case (${MAX_MESSAGES_PER_CASE_PER_DAY} messages). This resets automatically as earlier messages age past 24 hours — please try again later today or tomorrow.`,
+      error: `You've reached today's chat limit for this case (${MAX_MESSAGES_PER_CASE_PER_DAY} messages). This resets automatically as earlier messages age past 24 hours - please try again later today or tomorrow.`,
     });
   }
 
@@ -109,7 +123,7 @@ export default async function handler(req, res) {
     return res.status(404).json({ error: 'Case not found' });
   }
 
-  // 3. Load prior chat history for this case (full history — used for the
+  // 3. Load prior chat history for this case (full history - used for the
   // UI/edit/delete elsewhere; only trimmed at the point we build the
   // request to Claude, below).
   const { data: history, error: historyError } = await supabase
@@ -136,7 +150,7 @@ export default async function handler(req, res) {
 
   // 5. Build the system prompt from case context, marked as cacheable.
   // Anthropic caches everything up to and including the block carrying
-  // cache_control — since the case context is identical on every turn of a
+  // cache_control - since the case context is identical on every turn of a
   // session, this means only the FIRST message in a session pays full
   // price for it; every message within the following 5 minutes (the cache
   // lifetime, refreshed on each use) reads it back at a large discount
@@ -146,7 +160,7 @@ export default async function handler(req, res) {
   const systemPrompt = buildCaseContextPrompt(caseData);
 
   // 6. Trim history to the most recent MAX_HISTORY_MESSAGES entries before
-  // sending — see that constant's comment above for why.
+  // sending - see that constant's comment above for why.
   const trimmedHistory = history.slice(-MAX_HISTORY_MESSAGES);
 
   // 7. Call Anthropic's API directly with stream: true
@@ -156,7 +170,7 @@ export default async function handler(req, res) {
       method: 'POST',
       headers: {
         'content-type': 'application/json',
-        'x-api-key': process.env.VITE_ANTHROPIC_API_KEY,
+        'x-api-key': API_KEY,
         'anthropic-version': '2023-06-01',
       },
       body: JSON.stringify({
@@ -195,6 +209,7 @@ export default async function handler(req, res) {
   const decoder = new TextDecoder();
   let buffer = '';
   let fullResponse = '';
+  const usage = { input: 0, output: 0, cache_write: 0, cache_read: 0 };
 
   try {
     while (true) {
@@ -215,6 +230,19 @@ export default async function handler(req, res) {
           parsed = JSON.parse(data);
         } catch {
           continue;
+        }
+
+        // Token counts arrive in message_start (input side) and
+        // message_delta (output). Recorded for logging only.
+        if (parsed.type === 'message_start' && parsed.message?.usage) {
+          const u = parsed.message.usage;
+          usage.input = u.input_tokens || 0;
+          usage.cache_write = u.cache_creation_input_tokens || 0;
+          usage.cache_read = u.cache_read_input_tokens || 0;
+          usage.output = u.output_tokens || 0;
+        }
+        if (parsed.type === 'message_delta' && parsed.usage?.output_tokens) {
+          usage.output = parsed.usage.output_tokens;
         }
 
         if (parsed.type === 'content_block_delta' && parsed.delta?.text) {
@@ -239,6 +267,8 @@ export default async function handler(req, res) {
       res.write(`data: ${JSON.stringify({ assistantMessageId: insertedAssistant.id })}\n\n`);
     }
 
+    logChatUsage(usage, trimmedHistory.length, systemPrompt.length);
+
     res.write('data: [DONE]\n\n');
     res.end();
   } catch (e) {
@@ -254,6 +284,18 @@ export default async function handler(req, res) {
   }
 }
 
+// Logs token counts only - no case content, no message text.
+function logChatUsage(usage, historyCount, contextChars) {
+  try {
+    console.log('GOLIATHON_USAGE ' + JSON.stringify({
+      route: 'case-chat',
+      ...usage,
+      history_messages: historyCount,
+      context_chars: contextChars,
+    }));
+  } catch (_) { /* logging must never break a request */ }
+}
+
 function buildCaseContextPrompt(caseData) {
   return `You are Goliathon, an evidence-organisation assistant helping a self-representing litigant understand and work with their own case. You are not a solicitor and do not give legal advice or state legal conclusions as fact.
 
@@ -264,10 +306,10 @@ OVERVIEW:
 ${caseData.overview || 'Not available'}
 
 TIMELINE:
-${JSON.stringify(caseData.timeline || [], null, 2)}
+${JSON.stringify(caseData.timeline || [])}
 
 EVIDENCE LIBRARY:
-${JSON.stringify(caseData.evidence || [], null, 2)}
+${JSON.stringify(caseData.evidence || [])}
 
 WITNESS STATEMENT:
 ${caseData.witness_statement || 'Not available'}

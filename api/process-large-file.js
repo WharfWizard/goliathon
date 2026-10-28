@@ -1,4 +1,5 @@
 import { createClient } from '@supabase/supabase-js';
+import { originAllowed, resolveKey, describeAnthropicError } from '../lib/ai-key.js';
 
 // Processes a large evidence file (PDF or similar) that's too big to send
 // directly through /api/claude's request body. The browser has already
@@ -15,22 +16,21 @@ import { createClient } from '@supabase/supabase-js';
 // The prompt text itself is built client-side exactly as before (existing
 // case-context logic is unchanged) and passed in as `promptText`, so this
 // endpoint's only job is the large-file handling - not prompt construction.
-// Locked down (28 Oct 2026): same origin check and key name as /api/claude,
-// plus token-only usage logging (search Vercel logs for "GOLIATHON_USAGE").
-const DEFAULT_ORIGINS = ['https://goliathon.app', 'https://www.goliathon.app'];
-const ALLOWED_ORIGINS = (process.env.ALLOWED_ORIGINS
-  ? process.env.ALLOWED_ORIGINS.split(',').map(s => s.trim()).filter(Boolean)
-  : DEFAULT_ORIGINS);
-const API_KEY = process.env.ANTHROPIC_API_KEY || process.env.VITE_ANTHROPIC_API_KEY;
+// Locked down (28 Oct 2026): origin check, member's own key or shared
+// allowance (lib/ai-key.js), token-only usage logging ("GOLIATHON_USAGE").
 
 export default async function handler(req, res) {
   if (req.method !== 'POST') {
     return res.status(405).json({ error: 'Method not allowed' });
   }
 
-  const origin = req.headers.origin;
-  if (!origin || !ALLOWED_ORIGINS.includes(origin)) {
+  if (!originAllowed(req)) {
     return res.status(403).json({ error: 'Not allowed' });
+  }
+
+  const resolved = resolveKey(req);
+  if (resolved.error) {
+    return res.status(resolved.error.status).json({ error: resolved.error.message, code: resolved.error.code });
   }
 
   const { storagePath, mediaType, promptText } = req.body || {};
@@ -38,7 +38,7 @@ export default async function handler(req, res) {
     return res.status(400).json({ error: 'storagePath, mediaType, and promptText are required' });
   }
 
-  if (!process.env.SUPABASE_URL || !process.env.SUPABASE_ANON_KEY || !API_KEY) {
+  if (!process.env.SUPABASE_URL || !process.env.SUPABASE_ANON_KEY || !resolved.key) {
     return res.status(500).json({ error: 'Missing required environment variables' });
   }
 
@@ -66,7 +66,7 @@ export default async function handler(req, res) {
       method: 'POST',
       headers: {
         'content-type': 'application/json',
-        'x-api-key': API_KEY,
+        'x-api-key': resolved.key,
         'anthropic-version': '2023-06-01',
       },
       body: JSON.stringify({
@@ -90,7 +90,8 @@ export default async function handler(req, res) {
 
   if (!anthropicResponse.ok) {
     const errText = await anthropicResponse.text().catch(() => 'Unknown error');
-    return res.status(anthropicResponse.status).json({ error: errText });
+    const d = describeAnthropicError(anthropicResponse.status, errText, resolved.ownKey);
+    return res.status(anthropicResponse.status).json({ error: d.message, code: d.code });
   }
 
   const data = await anthropicResponse.json();
@@ -98,6 +99,7 @@ export default async function handler(req, res) {
     const u = data.usage || {};
     console.log('GOLIATHON_USAGE ' + JSON.stringify({
       route: 'process-large-file',
+      own_key: resolved.ownKey,
       model: data.model,
       file_kb: Math.round(arrayBuffer.byteLength / 1024),
       input: u.input_tokens || 0,

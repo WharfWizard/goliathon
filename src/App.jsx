@@ -1,5 +1,7 @@
 import { useState, useRef, useCallback, useEffect } from "react";
 import CaseChat from "./components/CaseChat";
+import OwnKeyPanel from "./components/OwnKeyPanel";
+import { aiHeaders, notifyAiError } from "./lib/userKey";
 import { createClient } from "@supabase/supabase-js";
 
 if (!document.getElementById("goliathon-fonts")) {
@@ -102,9 +104,9 @@ function markWelcomed(){try{localStorage.setItem(LS_WELCOMED,"1");}catch{}}
 function genId(){return Math.random().toString(36).substring(2,10)+Math.random().toString(36).substring(2,10);}
 function formatDate(iso){if(!iso)return"";try{return new Date(iso).toLocaleDateString("en-GB",{day:"numeric",month:"short",year:"numeric"});}catch{return iso;}}
 async function callClaude(messages){
-  const r=await fetch("/api/claude",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({model:"claude-sonnet-4-6",max_tokens:8000,system:SYSTEM,messages})});
+  const r=await fetch("/api/claude",{method:"POST",headers:aiHeaders({"Content-Type":"application/json"}),body:JSON.stringify({model:"claude-sonnet-4-6",max_tokens:8000,system:SYSTEM,messages})});
   const d=await r.json();
-  if(d.error||d.type==='error')throw new Error(d.error||d.error_message||'API error');
+  if(d.error||d.type==='error'){notifyAiError(d);throw new Error(d.error||d.error_message||'API error');}
   return d.content?.[0]?.text||"";
 }
 function fileToBase64(file){return new Promise((res,rej)=>{const r=new FileReader();r.onload=()=>res(r.result.split(",")[1]);r.onerror=rej;r.readAsDataURL(file);});}
@@ -1168,9 +1170,9 @@ export default function GoliathonApp(){
       if(uploadError)throw new Error('Upload failed: '+uploadError.message);
       setProcessingMsg("Analysing evidence…");
       const promptText=`Analyse this uploaded document as evidence. Filename: ${file.name}`+buildEvidencePrompt(dossier);
-      const res=await fetch("/api/process-large-file",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({storagePath,mediaType:'application/pdf',promptText})});
+      const res=await fetch("/api/process-large-file",{method:"POST",headers:aiHeaders({"Content-Type":"application/json"}),body:JSON.stringify({storagePath,mediaType:'application/pdf',promptText})});
       const data=await res.json();
-      if(data.error)throw new Error(data.error);
+      if(data.error){notifyAiError(data);throw new Error(data.error);}
       const response=data.content?.[0]?.text||"";
       let parsed;try{parsed=JSON.parse(response.replace(/```json|```/g,"").trim());}catch{throw new Error("Could not parse AI response");}
       setProcessingMsg("Updating dossier…");
@@ -1250,8 +1252,8 @@ export default function GoliathonApp(){
       imageContent.push({type:"text",text:"These are photographed pages of a physical document."});
       const existing=buildExistingCaseContext(dossier);
       const prompt=`${existing}\n\nAnalyse this photographed document (${cameraPages.length} pages) and return ONLY valid JSON:\n{"case_title":"short title","evidence_item":{"title":"title","date":"DD Mon YYYY or null","type":"Letter/Court Document/Medical/Financial/Other","summary":"2-3 sentence factual summary of what this document shows","facts_observed":"one sentence listing only what is directly stated or shown in the document — no interpretation","significance":"one or two short sentences, no more than 45 words in total, interpretation only, saying why this matters to the case. Use cautious wording such as appears to indicate, is relevant to, or would show if accurate. Never use the words establishes, proves, confirms, demonstrates conclusively, beyond doubt or beyond dispute, and never state a legal conclusion or a finding about who is at fault. Where the document is an account written by one party, for example an email, letter or statement from an individual or organisation, say so and treat its contents as that party reporting events and not as established fact. Do not repeat the facts already given in facts_observed — clearly interpretive"},"timeline_entry":{"date":"DD Mon YYYY or null","event":"one sentence","evidence":"reference"},"overview_update":"updated overview","witness_update":"one or two new first person sentences stating only what this document shows the person themselves said, did, received or experienced. Do not add events, motives or feelings the document does not state, do not use relative times such as today, and return an empty string if the document says nothing about the person's own experience","next_steps_update":"numbered 3-5 actions. Where any action involves escalation, include one plain sentence about potential costs exposure.","key_questions_update":"updated list of 3-5 plain-language questions this case still needs to answer","institution_response":"one plain sentence: the strongest argument the institution is likely to make against this case based on the evidence, or state that the evidence does not yet support a prediction.","decision_summary_update":"updated one-page decision-maker summary with the same structure as the main prompt: what the case is about, core dispute, strongest evidence, institution's likely argument, power imbalance if relevant, what happens next."}`;
-      const res=await fetch("/api/claude",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({model:"claude-sonnet-4-6",max_tokens:8000,system:SYSTEM,messages:[{role:"user",content:[...imageContent,{type:"text",text:prompt}]}]})});
-      const data=await res.json();const response=data.content?.[0]?.text||"";
+      const res=await fetch("/api/claude",{method:"POST",headers:aiHeaders({"Content-Type":"application/json"}),body:JSON.stringify({model:"claude-sonnet-4-6",max_tokens:8000,system:SYSTEM,messages:[{role:"user",content:[...imageContent,{type:"text",text:prompt}]}]})});
+      const data=await res.json();if(data.error){notifyAiError(data);throw new Error(data.error);}const response=data.content?.[0]?.text||"";
       let parsed;try{parsed=JSON.parse(response.replace(/```json|```/g,"").trim());}catch{throw new Error("Could not parse AI response");}
       const current=dossier||{evidence:[],timeline:[],witness_statement:"",overview:"",next_steps:""};
       const newEvidence=[...(current.evidence||[]),parsed.evidence_item];
@@ -1511,6 +1513,7 @@ export default function GoliathonApp(){
     {showDownload&&dossier&&<DownloadModal dossier={dossier} onClose={()=>setShowDownload(false)}/>}
     {editingEvidence!==null&&dossier?.evidence?.[editingEvidence]&&(<EditEvidenceModal item={dossier.evidence[editingEvidence]} index={editingEvidence} onSave={handleEditEvidence} onDelete={handleDeleteEvidence} onClose={()=>setEditingEvidence(null)}/>)}
     {editingTimeline!==null&&dossier?.timeline?.[editingTimeline]&&(<EditTimelineModal item={dossier.timeline[editingTimeline]} index={editingTimeline} onSave={handleEditTimeline} onDelete={handleDeleteTimeline} onClose={()=>setEditingTimeline(null)}/>)}
+    <OwnKeyPanel/>
     {editingWitness&&dossier&&(<EditWitnessModal text={toDisplayText(dossier.witness_statement)} onSave={handleEditWitness} onClose={()=>setEditingWitness(false)}/>)}
 
     <style>{`@keyframes pulse{0%,100%{opacity:.3;transform:scale(.8)}50%{opacity:1;transform:scale(1)}}*{box-sizing:border-box}::-webkit-scrollbar{width:6px}::-webkit-scrollbar-track{background:#001e3d}::-webkit-scrollbar-thumb{background:${YELLOW}40;border-radius:3px}input::placeholder,textarea::placeholder{color:#5a7a96}`}</style>

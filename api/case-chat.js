@@ -1,4 +1,5 @@
 import { createClient } from '@supabase/supabase-js';
+import { originAllowed, resolveKey, describeAnthropicError } from '../lib/ai-key.js';
 
 // How many prior messages (user + assistant combined) to resend as context
 // on each turn. Without a cap, every message in a long session resends the
@@ -17,13 +18,10 @@ const MAX_HISTORY_MESSAGES = 20;
 // data once you can see actual per-message cost in the Anthropic console.
 const MAX_MESSAGES_PER_CASE_PER_DAY = 30;
 
-// Locked down (28 Oct 2026): same origin check and key name as /api/claude,
-// plus token-only usage logging (search Vercel logs for "GOLIATHON_USAGE").
-const DEFAULT_ORIGINS = ['https://goliathon.app', 'https://www.goliathon.app'];
-const ALLOWED_ORIGINS = (process.env.ALLOWED_ORIGINS
-  ? process.env.ALLOWED_ORIGINS.split(',').map(s => s.trim()).filter(Boolean)
-  : DEFAULT_ORIGINS);
-const API_KEY = process.env.ANTHROPIC_API_KEY || process.env.VITE_ANTHROPIC_API_KEY;
+// Locked down (28 Oct 2026): origin check, member's own key or shared
+// allowance (lib/ai-key.js), token-only usage logging ("GOLIATHON_USAGE").
+// Members using their own key pay for their own messages, so the daily
+// per-case limit below applies only to the shared allowance.
 
 // Chat-with-case endpoint. Handles three operations:
 //   GET    ?caseId=...              - load existing chat history for a case
@@ -84,13 +82,13 @@ export default async function handler(req, res) {
   }
 
   // Only Goliathon's own pages may spend AI budget through this route.
-  const origin = req.headers.origin;
-  if (!origin || !ALLOWED_ORIGINS.includes(origin)) {
+  if (!originAllowed(req)) {
     return res.status(403).json({ error: 'Not allowed' });
   }
 
-  if (!API_KEY) {
-    return res.status(500).json({ error: 'Missing required environment variables' });
+  const resolved = resolveKey(req);
+  if (resolved.error) {
+    return res.status(resolved.error.status).json({ error: resolved.error.message, code: resolved.error.code });
   }
 
   // 1. Check the per-case daily limit before doing anything expensive.
@@ -106,9 +104,10 @@ export default async function handler(req, res) {
     return res.status(500).json({ error: 'Failed to check usage limit' });
   }
 
-  if (recentCount !== null && recentCount >= MAX_MESSAGES_PER_CASE_PER_DAY) {
+  if (!resolved.ownKey && recentCount !== null && recentCount >= MAX_MESSAGES_PER_CASE_PER_DAY) {
     return res.status(429).json({
-      error: `You've reached today's chat limit for this case (${MAX_MESSAGES_PER_CASE_PER_DAY} messages). This resets automatically as earlier messages age past 24 hours - please try again later today or tomorrow.`,
+      code: 'chat_daily_limit',
+      error: `You've reached today's chat limit for this case on the shared allowance (${MAX_MESSAGES_PER_CASE_PER_DAY} messages). It resets as earlier messages age past 24 hours. If you'd like to carry on now, you can use your own Anthropic key.`,
     });
   }
 
@@ -170,7 +169,7 @@ export default async function handler(req, res) {
       method: 'POST',
       headers: {
         'content-type': 'application/json',
-        'x-api-key': API_KEY,
+        'x-api-key': resolved.key,
         'anthropic-version': '2023-06-01',
       },
       body: JSON.stringify({
@@ -192,7 +191,8 @@ export default async function handler(req, res) {
 
   if (!anthropicResponse.ok || !anthropicResponse.body) {
     const errText = await anthropicResponse.text().catch(() => 'Unknown error');
-    return res.status(anthropicResponse.status).json({ error: errText });
+    const d = describeAnthropicError(anthropicResponse.status, errText, resolved.ownKey);
+    return res.status(anthropicResponse.status).json({ error: d.message, code: d.code });
   }
 
   // 8. Stream the response back to our own client as SSE.
@@ -267,7 +267,7 @@ export default async function handler(req, res) {
       res.write(`data: ${JSON.stringify({ assistantMessageId: insertedAssistant.id })}\n\n`);
     }
 
-    logChatUsage(usage, trimmedHistory.length, systemPrompt.length);
+    logChatUsage(usage, trimmedHistory.length, systemPrompt.length, resolved.ownKey);
 
     res.write('data: [DONE]\n\n');
     res.end();
@@ -285,10 +285,11 @@ export default async function handler(req, res) {
 }
 
 // Logs token counts only - no case content, no message text.
-function logChatUsage(usage, historyCount, contextChars) {
+function logChatUsage(usage, historyCount, contextChars, ownKey) {
   try {
     console.log('GOLIATHON_USAGE ' + JSON.stringify({
       route: 'case-chat',
+      own_key: ownKey,
       ...usage,
       history_messages: historyCount,
       context_chars: contextChars,

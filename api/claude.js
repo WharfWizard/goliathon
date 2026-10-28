@@ -1,11 +1,13 @@
 // /api/claude - server-side relay to Anthropic for Goliathon.
 //
-// Locked down (28 Oct 2026):
 // - Only requests from Goliathon's own web address are accepted.
 // - The model and token ceiling are set HERE, not by the browser.
 // - Only the fields Goliathon needs (system, messages) are passed on.
-// - Each call logs token counts only (no content, no personal data),
-//   so cost per upload / chat message can be measured in Vercel logs.
+// - Uses the member's own Anthropic key if they have added one,
+//   otherwise the shared allowance (see lib/ai-key.js).
+// - Each call logs token counts only (no content, no personal data, no key).
+
+import { originAllowed, resolveKey, describeAnthropicError } from '../lib/ai-key.js';
 
 export const config = {
   api: {
@@ -18,29 +20,17 @@ export const config = {
 const MODEL = 'claude-sonnet-4-6';
 const MAX_TOKENS = 8000;
 
-// Add your exact live address(es) here, or set ALLOWED_ORIGINS in Vercel
-// as a comma-separated list, e.g. "https://goliathon.app,https://www.goliathon.app"
-const DEFAULT_ORIGINS = ['https://goliathon.app', 'https://www.goliathon.app'];
-const ALLOWED_ORIGINS = (process.env.ALLOWED_ORIGINS
-  ? process.env.ALLOWED_ORIGINS.split(',').map(s => s.trim()).filter(Boolean)
-  : DEFAULT_ORIGINS);
-
-const API_KEY = process.env.ANTHROPIC_API_KEY || process.env.VITE_ANTHROPIC_API_KEY;
-
 export default async function handler(req, res) {
   if (req.method !== 'POST') return res.status(405).end();
 
-  // A browser on goliathon.app always sends its Origin. Requests from
-  // anywhere else (another site, or a script with no Origin) are refused.
-  // Note: this stops casual misuse, not a determined attacker. The
-  // membership pass check (from 1 Nov) is the stronger protection.
-  const origin = req.headers.origin;
-  if (!origin || !ALLOWED_ORIGINS.includes(origin)) {
+  if (!originAllowed(req)) {
     return res.status(403).json({ error: 'Not allowed', content: [{ type: 'text', text: 'Error: 403' }] });
   }
 
-  if (!API_KEY) {
-    return res.status(500).json({ error: 'Server not configured', content: [{ type: 'text', text: 'Error: 500' }] });
+  const resolved = resolveKey(req);
+  if (resolved.error) {
+    const e = resolved.error;
+    return res.status(e.status).json({ error: e.message, code: e.code, content: [{ type: 'text', text: 'Error: ' + e.status }] });
   }
 
   const { system, messages } = req.body || {};
@@ -53,11 +43,9 @@ export default async function handler(req, res) {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'x-api-key': API_KEY,
+        'x-api-key': resolved.key,
         'anthropic-version': '2023-06-01',
       },
-      // Model and ceiling fixed server-side; anything else the browser
-      // sends (other models, tools, larger max_tokens) is ignored.
       body: JSON.stringify({
         model: MODEL,
         max_tokens: MAX_TOKENS,
@@ -70,11 +58,12 @@ export default async function handler(req, res) {
 
     if (!response.ok) {
       const errText = await response.text();
-      return res.status(response.status).json({ error: errText, content: [{ type: 'text', text: 'Error: ' + response.status }] });
+      const d = describeAnthropicError(response.status, errText, resolved.ownKey);
+      return res.status(response.status).json({ error: d.message, code: d.code, content: [{ type: 'text', text: 'Error: ' + response.status }] });
     }
 
     const data = await response.json();
-    logUsage('claude', data, messages);
+    logUsage('claude', data, messages, resolved.ownKey);
     res.status(200).json(data);
   } catch (e) {
     res.status(500).json({ error: e.message, content: [{ type: 'text', text: 'Error: ' + e.message }] });
@@ -82,21 +71,21 @@ export default async function handler(req, res) {
 }
 
 // Logs token counts only. Search Vercel logs for "GOLIATHON_USAGE".
-function logUsage(route, data, messages) {
+function logUsage(route, data, messages, ownKey) {
   try {
     const u = data && data.usage ? data.usage : {};
-    const hasDocument = JSON.stringify(messages).includes('"type":"document"');
-    const hasImage = JSON.stringify(messages).includes('"type":"image"');
+    const asText = JSON.stringify(messages);
     console.log('GOLIATHON_USAGE ' + JSON.stringify({
       route,
+      own_key: ownKey,
       model: data && data.model,
       input: u.input_tokens || 0,
       output: u.output_tokens || 0,
       cache_write: u.cache_creation_input_tokens || 0,
       cache_read: u.cache_read_input_tokens || 0,
       stop: data && data.stop_reason,
-      has_document: hasDocument,
-      has_image: hasImage,
+      has_document: asText.includes('"type":"document"'),
+      has_image: asText.includes('"type":"image"'),
     }));
   } catch (_) { /* logging must never break a request */ }
 }

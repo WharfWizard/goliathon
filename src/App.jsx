@@ -44,9 +44,11 @@ function buildExistingCaseContext(dossier){
   if(!dossier)return"\n\nThis is the FIRST piece of evidence — establish the case title, parties, and initial overview.";
   const txt=v=>typeof v==="string"?v:Array.isArray(v)?v.join("\n"):(typeof toDisplayText==="function"?toDisplayText(v):"");
   const cut=(v,n)=>{const s=txt(v);return s.length>n?s.substring(0,n)+" [...]":s;};
-  const tl=dossier.timeline||[];
+  const tl=sortTimeline(dossier.timeline||[]);
   const ev=dossier.evidence||[];
-  const tlText=tl.map(t=>"["+(t.date||"undated")+"] "+cut(t.event,220)).join("\n");
+  // Shorten each entry as the timeline grows, so every entry still fits.
+  const perEntry=Math.max(60,Math.min(220,Math.floor(15500/Math.max(1,tl.length))-20));
+  const tlText=tl.map(t=>"["+(t.date||"undated")+"] "+cut(t.event,perEntry)).join("\n");
   const evText=ev.map((e,i)=>"#"+String(i+1).padStart(3,"0")+" "+(e.title||"Untitled")+" ("+(e.date||"undated")+")").join("\n");
   return "\n\nExisting case:\nTitle: "+(dossier.case_title||"Unknown")+
     "\nOverview: "+cut(dossier.overview,2500)+
@@ -63,7 +65,7 @@ function buildExistingCaseContext(dossier){
 function buildEvidencePrompt(dossier){
   const nextStepsText=typeof dossier?.next_steps==="string"?dossier.next_steps:Array.isArray(dossier?.next_steps)?dossier.next_steps.join("\n"):"";
   const existing=buildExistingCaseContext(dossier);
-  return `${existing}\n\nAnalyse this evidence and return ONLY valid JSON with no preamble or markdown:\n{"case_title":"short case title","evidence_item":{"title":"descriptive title","date":"DD Mon YYYY or null","type":"Letter/Email/Statement/Report/Photo/Web Page/Other","summary":"2-3 sentence factual summary of what this document shows","facts_observed":"one sentence listing only what is directly stated or shown in the document — no interpretation","significance":"one or two short sentences, no more than 45 words in total, interpretation only, saying why this matters to the case. Use cautious wording such as appears to indicate, is relevant to, or would show if accurate. Never use the words establishes, proves, confirms, demonstrates conclusively, beyond doubt or beyond dispute, and never state a legal conclusion or a finding about who is at fault. Where the document is an account written by one party, for example an email, letter or statement from an individual or organisation, say so and treat its contents as that party reporting events and not as established fact. Do not repeat the facts already given in facts_observed — clearly interpretive"},"timeline_entry":{"date":"DD Mon YYYY or null","event":"one sentence","evidence":"reference to this document"},"overview_update":"updated 3-4 sentence case overview","witness_update":"one or two new sentences in first person, stating only what this document shows the person themselves said, did, received or experienced. Do not add events, motives, feelings or conclusions the document does not state, and do not use relative times such as today or this morning: use the date from the document. Where the person only knows something from this document, say so, for example According to the letter dated 12 May 2024, I was told that. If the document says nothing about the person's own experience, return an empty string","next_steps_update":"updated numbered list of 3-5 priority actions. Where a step involves escalation, explain the financial and procedural risk specific to that route. Distinguish between: (a) internal complaints and FOS referrals — free for consumers, no adverse costs exposure; (b) FCA or regulatory reporting — does not adjudicate individual complaints or obtain individual redress; (c) civil litigation — court fees, professional fees and an adverse costs order may arise depending on track and claim type. Do not imply adverse-costs exposure where it does not ordinarily arise.","key_questions_update":"updated list of 3-5 plain-language questions this case still needs to answer, from the survivor's point of view","institution_response":"the strongest reasonable answer to this case, based strictly on the current evidence. Apply four disciplines: (1) Identify the strongest argument the institution could make that is supported by the current evidence — do not invent motives, facts or defences. (2) Where the evidence contradicts that argument, say so precisely. (3) Where the evidence leaves the argument open, say so. (4) Where the evidence does not yet allow any prediction, state that plainly. Write 2-4 sentences maximum. Do not speculate beyond what the evidence supports.","decision_summary_update":"updated one-page decision-maker summary with: (1) What this case is about — 2 sentences; (2) The core dispute — bullet list of 3-5 unanswered questions the institution cannot yet answer; (3) Strongest evidence — the 2-3 most significant items filed so far; (4) What the institution will likely argue — one sentence on their probable counter-position based only on the evidence; (5) Resource asymmetry — identify any material asymmetry in financial resources, information, legal representation or capacity to sustain the dispute. Explain its practical effect without treating inequality as evidence of misconduct. Where the evidence shows costs threats or procedural demands were actually used, describe them precisely. Distinguish between unequal capacity and demonstrated exploitation of it — power imbalance is context, abuse of power requires evidence; (6) What happens next — the single most important action. Written in plain English for a judge, ombudsman, or regulator reading this for the first time."}`;
+  return `${existing}\n\nAnalyse this evidence and return ONLY valid JSON with no preamble or markdown:\n{"case_title":"short case title","evidence_item":{"title":"descriptive title","date":"DD Mon YYYY or null","type":"Letter/Email/Statement/Report/Photo/Web Page/Other","summary":"2-3 sentence factual summary of what this document shows","facts_observed":"one sentence listing only what is directly stated or shown in the document — no interpretation","significance":"one or two short sentences, no more than 45 words in total, interpretation only, saying why this matters to the case. Use cautious wording such as appears to indicate, is relevant to, or would show if accurate. Never use the words establishes, proves, confirms, demonstrates conclusively, beyond doubt or beyond dispute, and never state a legal conclusion or a finding about who is at fault. Where the document is an account written by one party, for example an email, letter or statement from an individual or organisation, say so and treat its contents as that party reporting events and not as established fact. Do not repeat the facts already given in facts_observed — clearly interpretive"},"timeline_entry":{"date":"DD Mon YYYY or null","event":"one sentence","evidence":"reference to this document"},"overview_update":"the overview of the WHOLE case as it now stands, in 3-4 sentences: who is involved, what the dispute is about, the key events from the start of the timeline to now, and where things stand today. Base it on the full existing case above, not mainly on this document. Change the existing overview only where this document alters the overall picture","witness_update":"one or two new sentences in first person, stating only what this document shows the person themselves said, did, received or experienced. Do not add events, motives, feelings or conclusions the document does not state, and do not use relative times such as today or this morning: use the date from the document. Where the person only knows something from this document, say so, for example According to the letter dated 12 May 2024, I was told that. If the document says nothing about the person's own experience, return an empty string","next_steps_update":"updated numbered list of 3-5 priority actions. Where a step involves escalation, explain the financial and procedural risk specific to that route. Distinguish between: (a) internal complaints and FOS referrals — free for consumers, no adverse costs exposure; (b) FCA or regulatory reporting — does not adjudicate individual complaints or obtain individual redress; (c) civil litigation — court fees, professional fees and an adverse costs order may arise depending on track and claim type. Do not imply adverse-costs exposure where it does not ordinarily arise.","key_questions_update":"updated list of 3-5 plain-language questions this case still needs to answer, from the survivor's point of view","institution_response":"the strongest reasonable answer to this case, based strictly on the current evidence. Apply four disciplines: (1) Identify the strongest argument the institution could make that is supported by the current evidence — do not invent motives, facts or defences. (2) Where the evidence contradicts that argument, say so precisely. (3) Where the evidence leaves the argument open, say so. (4) Where the evidence does not yet allow any prediction, state that plainly. Write 2-4 sentences maximum. Do not speculate beyond what the evidence supports.","decision_summary_update":"updated one-page decision-maker summary of the WHOLE case as it now stands (drawing on all evidence filed, not mainly this document) with: (1) What this case is about — 2 sentences; (2) The core dispute — bullet list of 3-5 unanswered questions the institution cannot yet answer; (3) Strongest evidence — the 2-3 most significant items filed so far; (4) What the institution will likely argue — one sentence on their probable counter-position based only on the evidence; (5) Resource asymmetry — identify any material asymmetry in financial resources, information, legal representation or capacity to sustain the dispute. Explain its practical effect without treating inequality as evidence of misconduct. Where the evidence shows costs threats or procedural demands were actually used, describe them precisely. Distinguish between unequal capacity and demonstrated exploitation of it — power imbalance is context, abuse of power requires evidence; (6) What happens next — the single most important action. Written in plain English for a judge, ombudsman, or regulator reading this for the first time."}`;
 }
 
 // Merges a parsed AI response into the current dossier. Shared between
@@ -71,13 +73,15 @@ function buildEvidencePrompt(dossier){
 function mergeParsedIntoDossier(current,parsed){
   const newEvidence=[...(current.evidence||[]),parsed.evidence_item];
   const newTimeline=[...(current.timeline||[])];
-  if(parsed.timeline_entry?.event){newTimeline.push(parsed.timeline_entry);newTimeline.sort((a,b)=>{if(!a.date)return 1;if(!b.date)return-1;return new Date(a.date)-new Date(b.date);});}
-  const witnessUpdateText=(typeof parsed.witness_update==="string"?parsed.witness_update:"").trim();const newWitness=witnessUpdateText?(current.witness_statement?(current.witness_statement.includes(witnessUpdateText)?current.witness_statement:current.witness_statement+"\n\n"+witnessUpdateText):witnessUpdateText):(current.witness_statement||"");
+  if(parsed.timeline_entry?.event){newTimeline.push(parsed.timeline_entry);}
+  const sortedTimeline=sortTimeline(newTimeline);
+  const witnessUpdateText=(typeof parsed.witness_update==="string"?parsed.witness_update:"").trim();
+  const newWitness=insertWitnessParagraph(current.witness_statement||"",witnessUpdateText,parsed.timeline_entry?.date||parsed.evidence_item?.date);
   const rawNextSteps=typeof parsed.next_steps_update==="string"?parsed.next_steps_update:Array.isArray(parsed.next_steps_update)?parsed.next_steps_update.map((s,i)=>`${i+1}. ${s}`).join("\n"):(typeof current.next_steps==="string"?current.next_steps:"");
   const newNextSteps=cleanNumbering(rawNextSteps);
   const rawKeyQ=typeof parsed.key_questions_update==="string"?parsed.key_questions_update:Array.isArray(parsed.key_questions_update)?parsed.key_questions_update.map((s,i)=>`${i+1}. ${s}`).join("\n"):(typeof current.key_questions==="string"?current.key_questions:"");
   const newKeyQuestions=cleanNumbering(rawKeyQ);
-  return {...current,case_title:parsed.case_title||current.case_title,overview:toDisplayText(parsed.overview_update)||current.overview,timeline:newTimeline,witness_statement:newWitness,next_steps:newNextSteps,key_questions:newKeyQuestions,evidence:newEvidence,decision_summary:toDisplayText(parsed.decision_summary_update)||current.decision_summary,institution_response:toDisplayText(parsed.institution_response)||current.institution_response||""};
+  return {...current,case_title:parsed.case_title||current.case_title,overview:toDisplayText(parsed.overview_update)||current.overview,timeline:sortedTimeline,witness_statement:newWitness,next_steps:newNextSteps,key_questions:newKeyQuestions,evidence:newEvidence,decision_summary:toDisplayText(parsed.decision_summary_update)||current.decision_summary,institution_response:toDisplayText(parsed.institution_response)||current.institution_response||""};
 }
 
 // Clear any stale data from previous versions
@@ -102,6 +106,74 @@ function markWelcomed(){try{localStorage.setItem(LS_WELCOMED,"1");}catch{}}
 
 // Utils
 function genId(){return Math.random().toString(36).substring(2,10)+Math.random().toString(36).substring(2,10);}
+// ---- Dates, ordering and AI-reply helpers (added 29 Oct 2026) ----
+// Reads a date out of free text: "25 Nov 2025", "25th November 2025",
+// "November 25, 2025", "Nov 2025", "2025-11-25", "25/11/2025" (UK order),
+// or a range such as "4 Oct 2019 - 10 Nov 2020" (uses the first date).
+// Returns a number for sorting, or null when no date can be found.
+const MONTH_RE="(jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|june?|july?|aug(?:ust)?|sep(?:t(?:ember)?)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?)";
+const MONTH_IDX={jan:0,feb:1,mar:2,apr:3,may:4,jun:5,jul:6,aug:7,sep:8,oct:9,nov:10,dec:11};
+function monthIndex(m){return MONTH_IDX[String(m).toLowerCase().slice(0,3)];}
+function parseDateLoose(input,opts){
+  if(!input||typeof input!=="string")return null;
+  const allowYearOnly=!(opts&&opts.yearOnly===false);
+  const s=input.replace(/(\d)(st|nd|rd|th)\b/gi,"$1");
+  let m=s.match(/\b(\d{4})-(\d{1,2})-(\d{1,2})\b/);
+  if(m)return Date.UTC(+m[1],+m[2]-1,+m[3]);
+  m=s.match(new RegExp("\\b(\\d{1,2})\\s+"+MONTH_RE+"\\.?,?\\s+(\\d{4})\\b","i"));
+  if(m)return Date.UTC(+m[3],monthIndex(m[2]),+m[1]);
+  m=s.match(new RegExp("\\b"+MONTH_RE+"\\.?\\s+(\\d{1,2}),?\\s+(\\d{4})\\b","i"));
+  if(m)return Date.UTC(+m[3],monthIndex(m[1]),+m[2]);
+  m=s.match(/\b(\d{1,2})\/(\d{1,2})\/(\d{4})\b/);
+  if(m)return Date.UTC(+m[3],+m[2]-1,+m[1]);
+  m=s.match(new RegExp("\\b"+MONTH_RE+"\\.?,?\\s+(\\d{4})\\b","i"));
+  if(m)return Date.UTC(+m[2],monthIndex(m[1]),1);
+  if(allowYearOnly){m=s.match(/\b(19\d{2}|20\d{2})\b/);if(m)return Date.UTC(+m[1],0,1);}
+  return null;
+}
+// Timeline in date order; entries without a readable date go last.
+// Entries with the same date keep their existing order.
+function sortTimeline(tl){
+  if(!Array.isArray(tl))return tl;
+  return tl.map((t,i)=>({t,i,d:parseDateLoose(t&&t.date)}))
+    .sort((a,b)=>{if(a.d===null&&b.d===null)return a.i-b.i;if(a.d===null)return 1;if(b.d===null)return-1;return a.d-b.d||a.i-b.i;})
+    .map(x=>x.t);
+}
+function timelineIsSorted(tl){if(!Array.isArray(tl))return true;const s=sortTimeline(tl);return s.every((t,i)=>t===tl[i]);}
+
+// Pulls the JSON object out of an AI reply, even if the reply has words or
+// code fences around it. Throws a plain-English error if there is none.
+function extractJson(text){
+  const t=String(text||"").replace(/```json|```/g,"").trim();
+  try{return JSON.parse(t);}catch(_){}
+  const a=t.indexOf("{"),b=t.lastIndexOf("}");
+  if(a!==-1&&b>a){try{return JSON.parse(t.slice(a,b+1));}catch(_){}}
+  const err=new Error("Goliathon couldn't turn the AI's reply into an update"+(t?" (it replied: “"+t.slice(0,140)+(t.length>140?"…":"")+"”)":""));
+  err.aiReply=t;throw err;
+}
+
+// Witness statement paragraphs, each dated by the first full date near its start.
+function splitParagraphs(text){return String(text||"").split(/\n\s*\n/).map(p=>p.trim()).filter(Boolean);}
+function paragraphDate(p){return parseDateLoose(String(p).slice(0,220),{yearOnly:false});}
+// Places a new paragraph in date order instead of always at the end.
+function insertWitnessParagraph(statement,para,fallbackDate){
+  const add=String(para||"").trim();const cur=String(statement||"");
+  if(!add)return cur;if(!cur.trim())return add;if(cur.includes(add))return cur;
+  const own=paragraphDate(add);
+  const d=own!==null?own:parseDateLoose(fallbackDate||"",{yearOnly:false});
+  const paras=splitParagraphs(cur);
+  if(d!==null){const at=paras.findIndex(p=>{const pd=paragraphDate(p);return pd!==null&&pd>d;});if(at!==-1){paras.splice(at,0,add);return paras.join("\n\n");}}
+  paras.push(add);return paras.join("\n\n");
+}
+// Re-orders a whole statement by date. A paragraph with no date stays
+// attached to the dated paragraph before it; any opening undated text stays first.
+function sortWitnessByDate(text){
+  const groups=[];
+  splitParagraphs(text).forEach(p=>{const d=paragraphDate(p);if(d!==null||!groups.length)groups.push({d,paras:[p]});else groups[groups.length-1].paras.push(p);});
+  const head=groups.length&&groups[0].d===null?[groups.shift()]:[];
+  const sorted=groups.map((g,i)=>({...g,i})).sort((a,b)=>a.d-b.d||a.i-b.i);
+  return [...head,...sorted].flatMap(g=>g.paras).join("\n\n");
+}
 function formatDate(iso){if(!iso)return"";try{return new Date(iso).toLocaleDateString("en-GB",{day:"numeric",month:"short",year:"numeric"});}catch{return iso;}}
 async function callClaude(messages){
   const r=await fetch("/api/claude",{method:"POST",headers:aiHeaders({"Content-Type":"application/json"}),body:JSON.stringify({model:"claude-sonnet-4-6",max_tokens:8000,system:SYSTEM,messages})});
@@ -287,7 +359,7 @@ async function downloadPdf(sectionKey,dossier){
 
   const sections={
     overview:{title:"Case Overview",data:()=>[{type:"body",text:dossier.overview||"No overview available."}]},
-    timeline:{title:"Chronological Timeline",data:()=>(dossier.timeline||[]).map((t,i)=>({type:"timeline",num:i+1,date:t.date||"Date unknown",event:t.event,evidence:t.evidence}))},
+    timeline:{title:"Chronological Timeline",data:()=>sortTimeline(dossier.timeline||[]).map((t,i)=>({type:"timeline",num:i+1,date:t.date||"Date unknown",event:t.event,evidence:t.evidence}))},
     statement:{title:"Witness Statement",data:()=>[{type:"body",text:dossier.witness_statement||"No statement available."}]},
     evidence:{title:`Evidence Library — ${(dossier.evidence||[]).length} ${(dossier.evidence||[]).length===1?"Item":"Items"}`,data:()=>(dossier.evidence||[]).map((e,i)=>({type:"evidence",num:i+1,title:e.title,date:e.date,docType:e.type,summary:e.summary,factsObserved:e.facts_observed,significance:e.significance,redFlags:e.red_flags}))},
     nextsteps:{title:"Next Steps",data:()=>[{type:"body",text:dossier.next_steps||"No next steps available."}]},
@@ -299,7 +371,7 @@ async function downloadPdf(sectionKey,dossier){
       items.push({type:"sectionHeader",title:"Case Overview"});
       items.push({type:"body",text:dossier.overview||""});
       items.push({type:"sectionHeader",title:"Chronological Timeline"});
-      (dossier.timeline||[]).forEach((t,i)=>items.push({type:"timeline",num:i+1,date:t.date||"Date unknown",event:t.event,evidence:t.evidence}));
+      sortTimeline(dossier.timeline||[]).forEach((t,i)=>items.push({type:"timeline",num:i+1,date:t.date||"Date unknown",event:t.event,evidence:t.evidence}));
       items.push({type:"sectionHeader",title:"Witness Statement"});
       items.push({type:"body",text:dossier.witness_statement?"DRAFT - generated by Goliathon from your documents, not a statement you have made. Check that every sentence is accurate, and put it in your own words, before using it anywhere.\n\n"+dossier.witness_statement:""});
       items.push({type:"sectionHeader",title:`Evidence Library — ${(dossier.evidence||[]).length} ${(dossier.evidence||[]).length===1?"Item":"Items"}`});
@@ -476,7 +548,7 @@ async function downloadPdf(sectionKey,dossier){
   const filename=`${caseTitle.replace(/[^a-z0-9]/gi,"_")}_${sectionKey}.pdf`;
   doc.save(filename);
 }
-function buildFullDossierText(d){return["GOLIATHON EVIDENCE DOSSIER","Get SAFE (Support After Financial Exploitation)",`Generated: ${formatDate(new Date().toISOString())}`,"","═══════════════════════════════","CASE OVERVIEW","═══════════════════════════════",d.overview||"","","═══════════════════════════════","CHRONOLOGICAL TIMELINE","═══════════════════════════════",...(d.timeline||[]).map((t,i)=>`${i+1}. [${t.date||"Date unknown"}] ${t.event}`),"","═══════════════════════════════","WITNESS STATEMENT","═══════════════════════════════",d.witness_statement||"","","═══════════════════════════════",`EVIDENCE LIBRARY (${(d.evidence||[]).length} items)`,"═══════════════════════════════",...(d.evidence||[]).map((e,i)=>`[${String(i+1).padStart(3,"0")}] ${e.title}\n${e.summary}`),"","═══════════════════════════════","NEXT STEPS","═══════════════════════════════",d.next_steps||"","─────────────────────────────","Goliathon · Get SAFE · academyoflifeplanning.com/individuals/get-safe","Educational use only. Not legal advice."].join("\n");}
+function buildFullDossierText(d){return["GOLIATHON EVIDENCE DOSSIER","Get SAFE (Support After Financial Exploitation)",`Generated: ${formatDate(new Date().toISOString())}`,"","═══════════════════════════════","CASE OVERVIEW","═══════════════════════════════",d.overview||"","","═══════════════════════════════","CHRONOLOGICAL TIMELINE","═══════════════════════════════",...sortTimeline(d.timeline||[]).map((t,i)=>`${i+1}. [${t.date||"Date unknown"}] ${t.event}`),"","═══════════════════════════════","WITNESS STATEMENT","═══════════════════════════════",d.witness_statement||"","","═══════════════════════════════",`EVIDENCE LIBRARY (${(d.evidence||[]).length} items)`,"═══════════════════════════════",...(d.evidence||[]).map((e,i)=>`[${String(i+1).padStart(3,"0")}] ${e.title}\n${e.summary}`),"","═══════════════════════════════","NEXT STEPS","═══════════════════════════════",d.next_steps||"","─────────────────────────────","Goliathon · Get SAFE · academyoflifeplanning.com/individuals/get-safe","Educational use only. Not legal advice."].join("\n");}
 function caseStrength(d){if(!d)return 0;let s=0;s+=Math.min((d.evidence||[]).length*10,40);s+=Math.min((d.timeline||[]).length*5,20);s+=(d.witness_statement||"").length>200?15:(d.witness_statement||"").length>50?8:0;s+=(d.next_steps||"").length>100?10:0;s+=(d.overview||"").length>100?15:0;return Math.min(s,100);}
 
 // UI
@@ -618,8 +690,7 @@ Re-analyse this evidence item using the person's correction as the accurate posi
 Return ONLY valid JSON, no preamble or markdown:
 {"summary":"2-3 sentence corrected summary","facts_observed":"one sentence, corrected facts only — no interpretation","significance":"one sentence, corrected interpretation only — clearly distinguishable from fact"}`;
       const text=await callClaude([{role:"user",content:prompt}]);
-      const clean=text.replace(/```json|```/g,"").trim();
-      const parsed=JSON.parse(clean);
+      const parsed=extractJson(text);
       if(parsed.summary)setSummary(parsed.summary);
       if(parsed.facts_observed)setFactsObserved(parsed.facts_observed);
       if(parsed.significance)setSignificance(parsed.significance);
@@ -663,27 +734,36 @@ function EditWitnessModal({text,onSave,onClose}){
   const [correctionText,setCorrectionText]=useState("");
   const [correcting,setCorrecting]=useState(false);
   const [correctionError,setCorrectionError]=useState("");
+  const [notice,setNotice]=useState("");
 
   async function handleRequestCorrection(){
     if(!correctionText.trim())return;
     setCorrecting(true);setCorrectionError("");
     try{
-      const prompt=`A witness statement in a case dossier contains an inaccuracy. Correct it.
+      // Only the paragraphs the correction affects are rewritten, so a long
+      // statement is never retyped in full (and never cut short).
+      const paras=splitParagraphs(value);
+      const numbered=paras.map((p,i)=>"["+(i+1)+"] "+p).join("\n\n");
+      const prompt=`A witness statement in a case dossier contains an inaccuracy. The statement is below, split into numbered paragraphs.
 
-Current witness statement:
-"${value}"
+${numbered}
 
 The person says part of this is wrong. Their correction:
 "${correctionText}"
 
-Rewrite the witness statement applying this correction. Keep everything that is still accurate. Remove or fix only what the correction addresses. Keep it in first person, plain English, and keep roughly the same length and structure unless the correction requires otherwise.
+Identify only the paragraphs this correction affects and rewrite just those, applying the correction. Keep every other paragraph exactly as it is. Keep first person and plain English. Do not add events, motives or conclusions the correction does not give.
 
-Return ONLY valid JSON, no preamble or markdown:
-{"witness_statement":"the corrected witness statement, complete, in first person"}`;
+Always reply with ONLY valid JSON, no preamble, explanation or markdown:
+{"edits":[{"paragraph":paragraph number,"revised":"the corrected paragraph, or an empty string to remove it"}]}
+If no paragraph needs to change, reply {"edits":[]}.`;
       const responseText=await callClaude([{role:"user",content:prompt}]);
-      const clean=responseText.replace(/```json|```/g,"").trim();
-      const parsed=JSON.parse(clean);
-      if(parsed.witness_statement)setValue(parsed.witness_statement);
+      const parsed=extractJson(responseText);
+      const edits=Array.isArray(parsed.edits)?parsed.edits:[];
+      const next=[...paras];let changed=0;
+      edits.forEach(e=>{const i=Number(e&&e.paragraph)-1;if(i>=0&&i<next.length&&typeof e.revised==="string"){next[i]=e.revised.trim();changed++;}});
+      if(!changed){setCorrectionError("Goliathon couldn't find a paragraph this correction applies to. You can edit the text directly below.");setCorrecting(false);return;}
+      setValue(next.filter(Boolean).join("\n\n"));
+      setNotice(changed+" paragraph"+(changed>1?"s":"")+" updated. Check the changes, then press Save (or Cancel to discard).");
       setShowCorrection(false);setCorrectionText("");
     }catch(e){setCorrectionError("Could not re-analyse: "+(e.message||"unknown error")+". You can still edit the text above directly.");}
     setCorrecting(false);
@@ -695,8 +775,12 @@ Return ONLY valid JSON, no preamble or markdown:
 
       {!showCorrection&&<div style={{background:"#ffc72c14",border:"1px solid #ffc72c40",borderRadius:8,padding:"10px 12px",marginBottom:16}}>
         <p style={{margin:"0 0 8px",fontSize:12,color:"#c8dae6",lineHeight:1.6}}>Something inaccurate here? You can edit the text directly below, or tell Goliathon what's wrong and have it rewrite the statement.</p>
-        <Btn small variant="subtle" onClick={()=>setShowCorrection(true)}>⟲ This is wrong — re-analyse with correction</Btn>
+        <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
+          <Btn small variant="subtle" onClick={()=>setShowCorrection(true)}>⟲ This is wrong — re-analyse with correction</Btn>
+          <Btn small variant="subtle" onClick={()=>{const sorted=sortWitnessByDate(value);if(sorted===value.trim()||sorted===value){setNotice("The paragraphs are already in date order.");}else{setValue(sorted);setNotice("Paragraphs put in date order. Check it reads well, then press Save (or Cancel to discard).");}}}>⇅ Put paragraphs in date order</Btn>
+        </div>
       </div>}
+      {notice&&<p style={{margin:"0 0 12px",fontSize:12,color:"#4ade80",lineHeight:1.5}}>{notice}</p>}
 
       {showCorrection&&<div style={{background:"#001e3d",border:`1px solid ${BORDER}`,borderRadius:8,padding:"12px 14px",marginBottom:16}}>
         <label style={{fontSize:11,color:"#a0b4c8",letterSpacing:1,textTransform:"uppercase",fontFamily:"'Poppins', sans-serif",display:"block",marginBottom:6}}>What's wrong, and what's the correct position?</label>
@@ -740,17 +824,16 @@ Current event description: ${event}
 The person says this is wrong. Their correction:
 "${correctionText}"
 
-Rewrite the timeline entry applying this correction.
+Rewrite the timeline entry applying this correction. Goliathon orders the timeline by date automatically, so if the correction is only about where the entry sits, keep the date (or use the date the correction gives) and keep the event as it is. If you cannot apply the correction, return the current date and event unchanged.
 
-Return ONLY valid JSON, no preamble or markdown:
-{"date":"corrected date, same format as before, or DD Mon YYYY","event":"corrected one-sentence event description"}`;
+Always reply with ONLY valid JSON, no preamble, explanation or markdown:
+{"date":"corrected date as DD Mon YYYY","event":"corrected one-sentence event description"}`;
       const responseText=await callClaude([{role:"user",content:prompt}]);
-      const clean=responseText.replace(/```json|```/g,"").trim();
-      const parsed=JSON.parse(clean);
+      const parsed=extractJson(responseText);
       if(parsed.date)setDate(parsed.date);
       if(parsed.event)setEvent(parsed.event);
       setShowCorrection(false);setCorrectionText("");
-    }catch(e){setCorrectionError("Could not re-analyse: "+(e.message||"unknown error")+". You can still edit the fields above directly.");}
+    }catch(e){setCorrectionError((e.message||"Could not re-analyse")+". You can still edit the fields below directly. To move an entry, change its date and press Save.");}
     setCorrecting(false);
   }
 
@@ -773,7 +856,9 @@ Return ONLY valid JSON, no preamble or markdown:
         </div>
       </div>}
 
-      {field(date,setDate,"Date")}{field(event,setEvent,"Event",3)}{field(evidenceRef,setEvidenceRef,"Evidence Reference")}
+      {field(date,setDate,"Date")}
+      <p style={{margin:"-6px 0 12px",fontSize:11,color:parseDateLoose(date)===null&&date.trim()?"#e57373":"#7a96b0",lineHeight:1.5}}>{parseDateLoose(date)===null&&date.trim()?"Goliathon can't read this date, so the entry will sit at the end of the timeline. Try a format like 25 Nov 2025.":"The timeline is kept in date order automatically. To move this entry, change its date and press Save."}</p>
+      {field(event,setEvent,"Event",3)}{field(evidenceRef,setEvidenceRef,"Evidence Reference")}
       <AIDisclaimer/>
       <div style={{display:"flex",gap:8,justifyContent:"space-between",marginTop:16}}>
         <Btn danger small onClick={()=>{if(window.confirm("Remove this timeline entry?"))onDelete(index);}}>🗑 Remove</Btn>
@@ -823,7 +908,7 @@ function ReadOnlyDossier({dossier}){
     <div style={{background:NAVY,borderBottom:`3px solid ${YELLOW}`,padding:"14px 20px"}}><div style={{maxWidth:860,margin:"0 auto",display:"flex",alignItems:"center",gap:14,flexWrap:"wrap"}}><img src="/getsafe-logo.png" alt="Get SAFE" style={{width:40,height:40,objectFit:"contain"}}/><div style={{flex:1,minWidth:0}}><div style={{fontSize:9,letterSpacing:3,color:YELLOW,textTransform:"uppercase",fontFamily:"'Poppins', sans-serif"}}>Get SAFE · Goliathon Evidence Dossier</div><h1 style={{margin:0,fontFamily:"'Poppins', sans-serif",fontSize:19,fontWeight:800,color:WHITE,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{dossier.case_title||"Evidence Dossier"}</h1></div><div style={{display:"flex",gap:8,alignItems:"center"}}><Tag>Read Only</Tag><Btn small onClick={()=>setShowDownload(true)}>↓ Download</Btn></div></div></div>
     <div style={{maxWidth:860,margin:"0 auto",padding:"20px 16px"}}>
       <Panel title="Case Overview" icon="📋">{dossier.overview?<p style={{margin:0,fontSize:14,lineHeight:1.8,color:LIGHT}}>{toDisplayText(dossier.overview)}</p>:<EmptyState text="No overview yet."/>}</Panel>
-      <Panel title="Timeline" icon="📅">{!(dossier.timeline||[]).length?<EmptyState text="No timeline yet."/>:(dossier.timeline||[]).map((t,i)=>(<div key={i} style={{display:"flex",gap:12,marginBottom:12,paddingBottom:12,borderBottom:i<dossier.timeline.length-1?`1px solid ${BORDER}`:"none"}}><div style={{width:26,height:26,background:YELLOW,borderRadius:"50%",display:"flex",alignItems:"center",justifyContent:"center",fontFamily:"'Poppins', sans-serif",fontWeight:700,fontSize:11,color:NAVY,flexShrink:0}}>{i+1}</div><div><div style={{fontSize:11,color:YELLOW,fontWeight:600,marginBottom:2}}>{t.date||"Date unknown"}</div><div style={{fontSize:13,color:LIGHT,lineHeight:1.6}}>{t.event}</div></div></div>))}</Panel>
+      <Panel title="Timeline" icon="📅">{!(dossier.timeline||[]).length?<EmptyState text="No timeline yet."/>:sortTimeline(dossier.timeline||[]).map((t,i)=>(<div key={i} style={{display:"flex",gap:12,marginBottom:12,paddingBottom:12,borderBottom:i<dossier.timeline.length-1?`1px solid ${BORDER}`:"none"}}><div style={{width:26,height:26,background:YELLOW,borderRadius:"50%",display:"flex",alignItems:"center",justifyContent:"center",fontFamily:"'Poppins', sans-serif",fontWeight:700,fontSize:11,color:NAVY,flexShrink:0}}>{i+1}</div><div><div style={{fontSize:11,color:YELLOW,fontWeight:600,marginBottom:2}}>{t.date||"Date unknown"}</div><div style={{fontSize:13,color:LIGHT,lineHeight:1.6}}>{t.event}</div></div></div>))}</Panel>
       <Panel title="Witness Statement" icon="📝">{dossier.witness_statement?<p style={{margin:0,fontSize:14,lineHeight:1.9,color:LIGHT,whiteSpace:"pre-wrap"}}>{toDisplayText(dossier.witness_statement)}</p>:<EmptyState text="No statement yet."/>}</Panel>
       <Panel title={`Evidence Library — ${(dossier.evidence||[]).length} items`} icon="🗂️">{!(dossier.evidence||[]).length?<EmptyState text="No evidence yet."/>:(dossier.evidence||[]).map((e,i)=>(<div key={i} style={{background:"#001e3d",border:`1px solid ${BORDER}`,borderRadius:10,padding:13,marginBottom:9}}><div style={{display:"flex",alignItems:"center",gap:7,marginBottom:6,flexWrap:"wrap"}}><span style={{fontFamily:"'Poppins', sans-serif",fontWeight:700,fontSize:11,color:YELLOW}}>#{String(i+1).padStart(3,"0")}</span><span style={{fontFamily:"'Poppins', sans-serif",fontWeight:700,fontSize:13,color:WHITE,flex:1}}>{e.title}</span>{e.date&&<Tag>{e.date}</Tag>}{e.type&&<Tag color="#7a96b0">{e.type}</Tag>}</div><p style={{margin:"0 0 6px",fontSize:12,color:LIGHT,lineHeight:1.6}}>{e.summary}</p>{e.facts_observed&&<p style={{margin:"0 0 3px",fontSize:11,color:"#7a96b0"}}><span style={{fontWeight:600,textTransform:"uppercase",fontSize:10,letterSpacing:"0.05em"}}>What this shows: </span>{e.facts_observed}</p>}{e.significance&&<p style={{margin:0,fontSize:11,color:YELLOW}}><span style={{fontWeight:600,textTransform:"uppercase",fontSize:10,letterSpacing:"0.05em"}}>Why it matters: </span>{e.significance}</p>}{e.significance&&<AIDisclaimer compact/>}</div>))}</Panel>
       <Panel title="Next Steps" icon="📌">{dossier.next_steps?<p style={{margin:0,fontSize:14,lineHeight:1.8,color:LIGHT,whiteSpace:"pre-wrap"}}>{toDisplayText(dossier.next_steps)}</p>:<EmptyState text="No next steps yet."/>}</Panel>
@@ -938,13 +1023,20 @@ export default function GoliathonApp(){
 
   const updateCases=useCallback((updated)=>{setCases(updated);saveCases(updated);},[]);
 
-  const updateDossier=useCallback(async(newDossier)=>{
+  const updateDossier=useCallback(async(incoming)=>{
+    // Every save keeps the timeline in date order (including manual edits).
+    const newDossier=incoming&&Array.isArray(incoming.timeline)?{...incoming,timeline:sortTimeline(incoming.timeline)}:incoming;
     const updated=cases.map(c=>c.id===activeId?{...c,dossier:newDossier,title:newDossier.case_title||c.title}:c);
     updateCases(updated);setSaved(false);setSaveFailed(false);
     const {burden_of_proof_letter:_bpl,...dossierForDb}=newDossier;
     try{await saveDossierToDb({...dossierForDb,share_id:shareId},isSavedRef.current);isSavedRef.current=true;setSaved(true);}
     catch(e){console.error("Save error:",e);setSaveFailed(true);}
   },[cases,activeId,shareId,updateCases]);
+
+  // Cases saved before 29 Oct 2026 may have entries out of order: fix on open.
+  useEffect(()=>{
+    if(dossier&&Array.isArray(dossier.timeline)&&dossier.timeline.length>1&&!timelineIsSorted(dossier.timeline))updateDossier(dossier);
+  },[dossier,updateDossier]);
 
   const handleNewCase=useCallback(()=>{
     const c={id:genId(),title:"New Case",dossier:null,shareId:genId()};
@@ -1093,8 +1185,7 @@ export default function GoliathonApp(){
         text=await callClaude([{role:'user',content:'A person has received a legal claim or threat.\n\nAll available information:\n'+contextLines+'\n\n'+instructions}]);
       }
 
-      const clean=text.replace(/```json|```/g,'').trim();
-      const parsed=JSON.parse(clean);
+      const parsed=extractJson(text);
       const today=new Date().toLocaleDateString('en-GB',{day:'2-digit',month:'short',year:'numeric'});
       const newDossier={
         case_title:parsed.case_title||(threatForm.claimant?'Recipient v '+threatForm.claimant:'Legal Threat'),
@@ -1147,7 +1238,7 @@ export default function GoliathonApp(){
       setProcessingMsg("Analysing evidence…");
       const prompt=buildEvidencePrompt(dossier);
       const response=await callClaude([{...userMessage,content:typeof userMessage.content==="string"?userMessage.content+prompt:[...(Array.isArray(userMessage.content)?userMessage.content:[userMessage.content]),{type:"text",text:prompt}]}]);
-      let parsed;try{parsed=JSON.parse(response.replace(/```json|```/g,"").trim());}catch{throw new Error("Could not parse AI response");}
+      const parsed=extractJson(response);
       setProcessingMsg("Updating dossier…");
       const current=dossier||{evidence:[],timeline:[],witness_statement:"",overview:"",next_steps:""};
       const newDossier=mergeParsedIntoDossier(current,parsed);
@@ -1174,7 +1265,7 @@ export default function GoliathonApp(){
       const data=await res.json();
       if(data.error){notifyAiError(data);throw new Error(data.error);}
       const response=data.content?.[0]?.text||"";
-      let parsed;try{parsed=JSON.parse(response.replace(/```json|```/g,"").trim());}catch{throw new Error("Could not parse AI response");}
+      const parsed=extractJson(response);
       setProcessingMsg("Updating dossier…");
       const current=dossier||{evidence:[],timeline:[],witness_statement:"",overview:"",next_steps:""};
       const newDossier=mergeParsedIntoDossier(current,parsed);
@@ -1250,18 +1341,12 @@ export default function GoliathonApp(){
     try{
       const imageContent=cameraPages.map(p=>({type:"image",source:{type:"base64",media_type:"image/jpeg",data:p.data}}));
       imageContent.push({type:"text",text:"These are photographed pages of a physical document."});
-      const existing=buildExistingCaseContext(dossier);
-      const prompt=`${existing}\n\nAnalyse this photographed document (${cameraPages.length} pages) and return ONLY valid JSON:\n{"case_title":"short title","evidence_item":{"title":"title","date":"DD Mon YYYY or null","type":"Letter/Court Document/Medical/Financial/Other","summary":"2-3 sentence factual summary of what this document shows","facts_observed":"one sentence listing only what is directly stated or shown in the document — no interpretation","significance":"one or two short sentences, no more than 45 words in total, interpretation only, saying why this matters to the case. Use cautious wording such as appears to indicate, is relevant to, or would show if accurate. Never use the words establishes, proves, confirms, demonstrates conclusively, beyond doubt or beyond dispute, and never state a legal conclusion or a finding about who is at fault. Where the document is an account written by one party, for example an email, letter or statement from an individual or organisation, say so and treat its contents as that party reporting events and not as established fact. Do not repeat the facts already given in facts_observed — clearly interpretive"},"timeline_entry":{"date":"DD Mon YYYY or null","event":"one sentence","evidence":"reference"},"overview_update":"updated overview","witness_update":"one or two new first person sentences stating only what this document shows the person themselves said, did, received or experienced. Do not add events, motives or feelings the document does not state, do not use relative times such as today, and return an empty string if the document says nothing about the person's own experience","next_steps_update":"numbered 3-5 actions. Where any action involves escalation, include one plain sentence about potential costs exposure.","key_questions_update":"updated list of 3-5 plain-language questions this case still needs to answer","institution_response":"one plain sentence: the strongest argument the institution is likely to make against this case based on the evidence, or state that the evidence does not yet support a prediction.","decision_summary_update":"updated one-page decision-maker summary with the same structure as the main prompt: what the case is about, core dispute, strongest evidence, institution's likely argument, power imbalance if relevant, what happens next."}`;
+      const prompt=`Analyse this photographed document (${cameraPages.length} page${cameraPages.length>1?"s":""}) as evidence.`+buildEvidencePrompt(dossier);
       const res=await fetch("/api/claude",{method:"POST",headers:aiHeaders({"Content-Type":"application/json"}),body:JSON.stringify({model:"claude-sonnet-4-6",max_tokens:8000,system:SYSTEM,messages:[{role:"user",content:[...imageContent,{type:"text",text:prompt}]}]})});
       const data=await res.json();if(data.error){notifyAiError(data);throw new Error(data.error);}const response=data.content?.[0]?.text||"";
-      let parsed;try{parsed=JSON.parse(response.replace(/```json|```/g,"").trim());}catch{throw new Error("Could not parse AI response");}
+      const parsed=extractJson(response);
       const current=dossier||{evidence:[],timeline:[],witness_statement:"",overview:"",next_steps:""};
-      const newEvidence=[...(current.evidence||[]),parsed.evidence_item];
-      const newTimeline=[...(current.timeline||[])];
-      if(parsed.timeline_entry?.event){newTimeline.push(parsed.timeline_entry);newTimeline.sort((a,b)=>{if(!a.date)return 1;if(!b.date)return-1;return new Date(a.date)-new Date(b.date);});}
-      const witnessUpdateText=(typeof parsed.witness_update==="string"?parsed.witness_update:"").trim();const newWitness=witnessUpdateText?(current.witness_statement?(current.witness_statement.includes(witnessUpdateText)?current.witness_statement:current.witness_statement+"\n\n"+witnessUpdateText):witnessUpdateText):(current.witness_statement||"");
-      const newNextSteps=cleanNumbering(typeof parsed.next_steps_update==="string"?parsed.next_steps_update:Array.isArray(parsed.next_steps_update)?parsed.next_steps_update.map((s,i)=>`${i+1}. ${s}`).join("\n"):(typeof current.next_steps==="string"?current.next_steps:""));
-      await updateDossier({...current,case_title:parsed.case_title||current.case_title,overview:parsed.overview_update||current.overview,timeline:newTimeline,witness_statement:newWitness,next_steps:newNextSteps,evidence:newEvidence});
+      await updateDossier(mergeParsedIntoDossier(current,parsed));
     }catch(e){alert("Something went wrong with the camera scan.\n\n"+e.message);}
     cameraPages.forEach(p=>URL.revokeObjectURL(p.preview));setCameraPages([]);setCameraProcessing(false);setProcessing(false);setProcessingMsg("");
   },[cameraPages,dossier,updateDossier]);

@@ -41,7 +41,7 @@ const supabaseBrowser=createClient(import.meta.env.VITE_SUPABASE_URL,import.meta
 // Builds the "existing case" context sent with each new document, so the AI sees
 // the WHOLE case and not just the opening few hundred characters of it.
 function buildExistingCaseContext(dossier){
-  if(!dossier)return"\n\nThis is the FIRST piece of evidence — establish the case title, parties, and initial overview.";
+  if(!dossier)return"\n\nThis is the FIRST piece of evidence — establish the case title and parties.";
   const txt=v=>typeof v==="string"?v:Array.isArray(v)?v.join("\n"):(typeof toDisplayText==="function"?toDisplayText(v):"");
   const cut=(v,n)=>{const s=txt(v);return s.length>n?s.substring(0,n)+" [...]":s;};
   const tl=sortTimeline(dossier.timeline||[]);
@@ -59,13 +59,41 @@ function buildExistingCaseContext(dossier){
     "\nKey questions so far: "+cut(dossier.key_questions,2000)+
     "\nDecision-maker summary so far: "+cut(dossier.decision_summary,3000)+
     "\nInstitution response so far: "+cut(dossier.institution_response,1000)+
-    "\n\nCONSISTENCY RULES: (1) The new document takes priority over earlier summaries where they conflict, but do not silently overwrite. If dates, parties, amounts or events differ between documents, say so plainly in the overview and name both versions. (2) Never restate an earlier summary as fact if a document contradicts it. (3) If this document appears to duplicate one already filed (same sender, date and subject), begin the summary with 'Possible duplicate of #NNN.' using that item's number. (4) Do not carry forward wording from earlier summaries that overstates what a document shows. LENGTH LIMITS (the reply must be complete valid JSON, so keep every field within these limits): overview_update at most 150 words; witness_update at most 80 words; next_steps_update at most 5 items of at most 90 words each; key_questions_update at most 5 questions of at most 50 words each; institution_response at most 150 words; decision_summary_update at most 500 words; evidence_item summary at most 120 words, facts_observed at most 250 words, significance at most 45 words. Reply with the JSON object only, with no text before or after it.";
+    "\n\nCONSISTENCY RULES: (1) The new document takes priority over earlier summaries where they conflict, but do not silently overwrite. If dates, parties, amounts or events differ between documents, say so plainly in this evidence item's summary and name both versions. (2) Never restate an earlier summary as fact if a document contradicts it. (3) If this document appears to duplicate one already filed (same sender, date and subject), begin the summary with 'Possible duplicate of #NNN.' using that item's number. (4) Do not carry forward wording from earlier summaries that overstates what a document shows. LENGTH LIMITS (the reply must be complete valid JSON, so keep every field within these limits): witness_update at most 80 words; next_steps_update at most 5 items of at most 90 words each; key_questions_update at most 5 questions of at most 50 words each; institution_response at most 150 words; decision_summary_update at most 500 words; evidence_item summary at most 120 words, facts_observed at most 250 words, significance at most 45 words. Reply with the JSON object only, with no text before or after it.";
 }
 
 function buildEvidencePrompt(dossier){
   const nextStepsText=typeof dossier?.next_steps==="string"?dossier.next_steps:Array.isArray(dossier?.next_steps)?dossier.next_steps.join("\n"):"";
   const existing=buildExistingCaseContext(dossier);
-  return `${existing}\n\nAnalyse this evidence and return ONLY valid JSON with no preamble or markdown:\n{"case_title":"short case title","evidence_item":{"title":"descriptive title","date":"DD Mon YYYY or null","type":"Letter/Email/Statement/Report/Photo/Web Page/Other","summary":"2-3 sentence factual summary of what this document shows","facts_observed":"one sentence listing only what is directly stated or shown in the document — no interpretation","significance":"one or two short sentences, no more than 45 words in total, interpretation only, saying why this matters to the case. Use cautious wording such as appears to indicate, is relevant to, or would show if accurate. Never use the words establishes, proves, confirms, demonstrates conclusively, beyond doubt or beyond dispute, and never state a legal conclusion or a finding about who is at fault. Where the document is an account written by one party, for example an email, letter or statement from an individual or organisation, say so and treat its contents as that party reporting events and not as established fact. Do not repeat the facts already given in facts_observed — clearly interpretive"},"timeline_entry":{"date":"DD Mon YYYY or null","event":"one sentence","evidence":"reference to this document"},"overview_update":"the overview of the WHOLE case as it now stands, in 3-4 sentences: who is involved, what the dispute is about, the key events from the start of the timeline to now, and where things stand today. Base it on the full existing case above, not mainly on this document. Change the existing overview only where this document alters the overall picture","witness_update":"one or two new sentences in first person, stating only what this document shows the person themselves said, did, received or experienced. Do not add events, motives, feelings or conclusions the document does not state, and do not use relative times such as today or this morning: use the date from the document. Where the person only knows something from this document, say so, for example According to the letter dated 12 May 2024, I was told that. If the document says nothing about the person's own experience, return an empty string","next_steps_update":"updated numbered list of 3-5 priority actions. Where a step involves escalation, explain the financial and procedural risk specific to that route. Distinguish between: (a) internal complaints and FOS referrals — free for consumers, no adverse costs exposure; (b) FCA or regulatory reporting — does not adjudicate individual complaints or obtain individual redress; (c) civil litigation — court fees, professional fees and an adverse costs order may arise depending on track and claim type. Do not imply adverse-costs exposure where it does not ordinarily arise.","key_questions_update":"updated list of 3-5 plain-language questions this case still needs to answer, from the survivor's point of view","institution_response":"the strongest reasonable answer to this case, based strictly on the current evidence. Apply four disciplines: (1) Identify the strongest argument the institution could make that is supported by the current evidence — do not invent motives, facts or defences. (2) Where the evidence contradicts that argument, say so precisely. (3) Where the evidence leaves the argument open, say so. (4) Where the evidence does not yet allow any prediction, state that plainly. Write 2-4 sentences maximum. Do not speculate beyond what the evidence supports.","decision_summary_update":"updated one-page decision-maker summary of the WHOLE case as it now stands (drawing on all evidence filed, not mainly this document) with: (1) What this case is about — 2 sentences; (2) The core dispute — bullet list of 3-5 unanswered questions the institution cannot yet answer; (3) Strongest evidence — the 2-3 most significant items filed so far; (4) What the institution will likely argue — one sentence on their probable counter-position based only on the evidence; (5) Resource asymmetry — identify any material asymmetry in financial resources, information, legal representation or capacity to sustain the dispute. Explain its practical effect without treating inequality as evidence of misconduct. Where the evidence shows costs threats or procedural demands were actually used, describe them precisely. Distinguish between unequal capacity and demonstrated exploitation of it — power imbalance is context, abuse of power requires evidence; (6) What happens next — the single most important action. Written in plain English for a judge, ombudsman, or regulator reading this for the first time."}`;
+  return `${existing}\n\nAnalyse this evidence and return ONLY valid JSON with no preamble or markdown:\n{"case_title":"short case title","evidence_item":{"title":"descriptive title","date":"DD Mon YYYY or null","type":"Letter/Email/Statement/Report/Photo/Web Page/Other","summary":"2-3 sentence factual summary of what this document shows","facts_observed":"one sentence listing only what is directly stated or shown in the document — no interpretation","significance":"one or two short sentences, no more than 45 words in total, interpretation only, saying why this matters to the case. Use cautious wording such as appears to indicate, is relevant to, or would show if accurate. Never use the words establishes, proves, confirms, demonstrates conclusively, beyond doubt or beyond dispute, and never state a legal conclusion or a finding about who is at fault. Where the document is an account written by one party, for example an email, letter or statement from an individual or organisation, say so and treat its contents as that party reporting events and not as established fact. Do not repeat the facts already given in facts_observed — clearly interpretive"},"timeline_entry":{"date":"DD Mon YYYY or null","event":"one sentence","evidence":"reference to this document"},"witness_update":"one or two new sentences in first person, stating only what this document shows the person themselves said, did, received or experienced. Do not add events, motives, feelings or conclusions the document does not state, and do not use relative times such as today or this morning: use the date from the document. Where the person only knows something from this document, say so, for example According to the letter dated 12 May 2024, I was told that. If the document says nothing about the person's own experience, return an empty string","next_steps_update":"updated numbered list of 3-5 priority actions. Where a step involves escalation, explain the financial and procedural risk specific to that route. Distinguish between: (a) internal complaints and FOS referrals — free for consumers, no adverse costs exposure; (b) FCA or regulatory reporting — does not adjudicate individual complaints or obtain individual redress; (c) civil litigation — court fees, professional fees and an adverse costs order may arise depending on track and claim type. Do not imply adverse-costs exposure where it does not ordinarily arise.","key_questions_update":"updated list of 3-5 plain-language questions this case still needs to answer, from the survivor's point of view","institution_response":"the strongest reasonable answer to this case, based strictly on the current evidence. Apply four disciplines: (1) Identify the strongest argument the institution could make that is supported by the current evidence — do not invent motives, facts or defences. (2) Where the evidence contradicts that argument, say so precisely. (3) Where the evidence leaves the argument open, say so. (4) Where the evidence does not yet allow any prediction, state that plainly. Write 2-4 sentences maximum. Do not speculate beyond what the evidence supports.","decision_summary_update":"updated one-page decision-maker summary of the WHOLE case as it now stands (drawing on all evidence filed, not mainly this document) with: (1) What this case is about — 2 sentences; (2) The core dispute — bullet list of 3-5 unanswered questions the institution cannot yet answer; (3) Strongest evidence — the 2-3 most significant items filed so far; (4) What the institution will likely argue — one sentence on their probable counter-position based only on the evidence; (5) Resource asymmetry — identify any material asymmetry in financial resources, information, legal representation or capacity to sustain the dispute. Explain its practical effect without treating inequality as evidence of misconduct. Where the evidence shows costs threats or procedural demands were actually used, describe them precisely. Distinguish between unequal capacity and demonstrated exploitation of it — power imbalance is context, abuse of power requires evidence; (6) What happens next — the single most important action. Written in plain English for a judge, ombudsman, or regulator reading this for the first time."}`;
+}
+
+// Writes the case overview from the WHOLE timeline, as its own short call,
+// so the newest document can't dominate it. Uses one line per timeline
+// entry, oldest first: roughly 1-2p per update on a large case.
+async function generateWholeCaseOverview(d){
+  const tl=sortTimeline((d&&d.timeline)||[]);
+  if(!tl.length)return"";
+  const per=Math.max(80,Math.min(260,Math.floor(24000/tl.length)-20));
+  const lines=tl.map((t,i)=>(i+1)+". ["+(t.date||"undated")+"] "+String(t.event||"").slice(0,per)).join("\n");
+  const prompt=`Below is the complete timeline of a case, oldest first (${tl.length} entries).
+
+Case title: ${d.case_title||"Unknown"}
+
+TIMELINE:
+${lines}
+
+Write the case overview for someone reading this case for the first time. 4-5 sentences, at most 170 words, covering the WHOLE case in this order: (1) who the person is and who the dispute is with; (2) how it began, using the earliest entries; (3) the main developments in between; (4) where it stands now, including any upcoming date. Give the early history as much weight as recent events, and do not centre the overview on the latest entry or any single document. Where something is one party's account, say so. No legal conclusions or findings of fault. Plain English.
+
+Always reply with ONLY valid JSON, no preamble, explanation or markdown:
+{"overview":"the overview"}`;
+  const parsed=extractJson(await callClaude([{role:"user",content:prompt}]));
+  return toDisplayText(parsed.overview)||"";
+}
+// Adds the whole-case overview to a dossier; keeps the old one if this fails.
+async function withWholeCaseOverview(d){
+  try{const ov=await generateWholeCaseOverview(d);return ov?{...d,overview:ov}:d;}
+  catch(e){console.warn("Overview refresh failed:",e.message);return d;}
 }
 
 // Merges a parsed AI response into the current dossier. Shared between
@@ -1099,6 +1127,15 @@ export default function GoliathonApp(){
     updateDossier({...dossier,evidence:newEvidence});setEditingEvidence(null);
   },[dossier,updateDossier]);
 
+  const [refreshingOverview,setRefreshingOverview]=useState(false);
+  const handleRefreshOverview=useCallback(async()=>{
+    if(!dossier||refreshingOverview)return;
+    setRefreshingOverview(true);
+    try{const ov=await generateWholeCaseOverview(dossier);if(ov)await updateDossier({...dossier,overview:ov});}
+    catch(e){alert("Couldn't refresh the overview just now. Please try again.\n\n"+e.message);}
+    setRefreshingOverview(false);
+  },[dossier,refreshingOverview,updateDossier]);
+
   const handleEditTimeline=useCallback((index,updated)=>{
     if(!dossier)return;const newTimeline=[...(dossier.timeline||[])];newTimeline[index]={...newTimeline[index],...updated};
     updateDossier({...dossier,timeline:newTimeline});setEditingTimeline(null);
@@ -1241,7 +1278,8 @@ export default function GoliathonApp(){
       const parsed=extractJson(response);
       setProcessingMsg("Updating dossier…");
       const current=dossier||{evidence:[],timeline:[],witness_statement:"",overview:"",next_steps:""};
-      const newDossier=mergeParsedIntoDossier(current,parsed);
+      setProcessingMsg("Updating case overview…");
+      const newDossier=await withWholeCaseOverview(mergeParsedIntoDossier(current,parsed));
       await updateDossier(newDossier);
     }catch(e){alert("Something went wrong processing this file. Please try again.\n\n"+e.message);}
     setProcessing(false);setProcessingMsg("");
@@ -1268,7 +1306,8 @@ export default function GoliathonApp(){
       const parsed=extractJson(response);
       setProcessingMsg("Updating dossier…");
       const current=dossier||{evidence:[],timeline:[],witness_statement:"",overview:"",next_steps:""};
-      const newDossier=mergeParsedIntoDossier(current,parsed);
+      setProcessingMsg("Updating case overview…");
+      const newDossier=await withWholeCaseOverview(mergeParsedIntoDossier(current,parsed));
       await updateDossier(newDossier);
     }catch(e){alert("Something went wrong processing this large file. Please try again.\n\n"+e.message);}
     setProcessing(false);setProcessingMsg("");
@@ -1346,7 +1385,8 @@ export default function GoliathonApp(){
       const data=await res.json();if(data.error){notifyAiError(data);throw new Error(data.error);}const response=data.content?.[0]?.text||"";
       const parsed=extractJson(response);
       const current=dossier||{evidence:[],timeline:[],witness_statement:"",overview:"",next_steps:""};
-      await updateDossier(mergeParsedIntoDossier(current,parsed));
+      setProcessingMsg("Updating case overview…");
+      await updateDossier(await withWholeCaseOverview(mergeParsedIntoDossier(current,parsed)));
     }catch(e){alert("Something went wrong with the camera scan.\n\n"+e.message);}
     cameraPages.forEach(p=>URL.revokeObjectURL(p.preview));setCameraPages([]);setCameraProcessing(false);setProcessing(false);setProcessingMsg("");
   },[cameraPages,dossier,updateDossier]);
@@ -1524,7 +1564,7 @@ export default function GoliathonApp(){
       {dossier&&(
         <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit, minmax(300px, 1fr))",gap:16}}>
           <div>
-            <Panel title="Case Overview" icon="📋" action={<Btn small variant="ghost" onClick={()=>downloadPdf("overview",dossier)}>↓</Btn>}>{dossier.overview?<p style={{margin:0,fontSize:13,lineHeight:1.8,color:LIGHT}}>{toDisplayText(dossier.overview)}</p>:<EmptyState text="Building overview…"/>}</Panel>
+            <Panel title="Case Overview" icon="📋" action={<div style={{display:"flex",gap:6}}><Btn small variant="ghost" disabled={refreshingOverview||!(dossier.timeline||[]).length} onClick={handleRefreshOverview}>{refreshingOverview?"Refreshing…":"⟳ Refresh"}</Btn><Btn small variant="ghost" onClick={()=>downloadPdf("overview",dossier)}>↓</Btn></div>}>{dossier.overview?<p style={{margin:0,fontSize:13,lineHeight:1.8,color:LIGHT}}>{toDisplayText(dossier.overview)}</p>:<EmptyState text="Building overview…"/>}</Panel>
             <Panel title="Witness Statement" icon="📝" action={<div style={{display:"flex",gap:6}}><Btn small variant="ghost" onClick={()=>setEditingWitness(true)}>✏</Btn><Btn small variant="ghost" onClick={()=>downloadPdf("statement",dossier)}>↓</Btn></div>}>{dossier.witness_statement?<p style={{margin:0,fontSize:13,lineHeight:1.9,color:LIGHT,whiteSpace:"pre-wrap"}}>{toDisplayText(dossier.witness_statement)}</p>:<EmptyState text="Building statement…"/>}</Panel>
             <Panel title="Next Steps" icon="📌" action={<Btn small variant="ghost" onClick={()=>downloadPdf("nextsteps",dossier)}>↓</Btn>}>{dossier.next_steps?<p style={{margin:0,fontSize:13,lineHeight:1.8,color:LIGHT,whiteSpace:"pre-wrap"}}>{toDisplayText(dossier.next_steps)}</p>:<EmptyState text="Next steps will appear here…"/>}</Panel>
             <Panel title="Key Questions in This Case" icon="❓" action={<Btn small variant="ghost" onClick={()=>downloadPdf("keyquestions",dossier)}>↓</Btn>}>{dossier.key_questions?<>

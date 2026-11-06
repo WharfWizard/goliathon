@@ -53,6 +53,11 @@ export default async function handler(req, res) {
         // prompt caching on the system prompt is ever switched on).
         ...((typeof system === 'string' || Array.isArray(system)) ? { system } : {}),
         messages,
+        // Automatic prompt caching: Anthropic places the cache point on the
+        // last block and moves it forward as the conversation grows, so each
+        // turn re-reads the earlier conversation at the cheap cached rate.
+        // Skipped if the browser already set 4 cache points (the API maximum).
+        ...(countCachePoints(system, messages) < 4 ? { cache_control: { type: 'ephemeral' } } : {}),
       }),
     });
 
@@ -68,6 +73,14 @@ export default async function handler(req, res) {
   } catch (e) {
     res.status(500).json({ error: e.message, content: [{ type: 'text', text: 'Error: ' + e.message }] });
   }
+}
+
+// Counts cache points the browser has already set on system/message blocks.
+function countCachePoints(system, messages) {
+  try {
+    const s = JSON.stringify([system || null, messages]);
+    return (s.match(/"cache_control"\s*:/g) || []).length;
+  } catch (_) { return 4; } // if unsure, don't add one
 }
 
 // Logs token counts only. Search Vercel logs for "GOLIATHON_USAGE".

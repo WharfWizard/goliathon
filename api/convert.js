@@ -1,5 +1,10 @@
 import mammoth from 'mammoth';
-import MsgReader from '@kenjiuno/msgreader';
+import MsgReaderModule from '@kenjiuno/msgreader';
+
+// The package is CommonJS. Imported from an ES module, its default export is
+// the whole package object and the reader class sits on `.default`, so
+// `new MsgReader(...)` failed with "MsgReader is not a constructor".
+const MsgReader = MsgReaderModule.default || MsgReaderModule;
 
 export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
@@ -15,6 +20,8 @@ export default async function handler(req, res) {
     const buffer = Buffer.from(data, 'base64');
     const ext = filename.split('.').pop().toLowerCase();
     let text = '';
+    const attachments = []; // .msg only: attachment contents, base64
+    const skipped = [];     // .msg only: attachments not included: { filename, reason }
 
     if (ext === 'html' || ext === 'htm') {
       // Strip HTML tags to readable text
@@ -88,6 +95,27 @@ export default async function handler(req, res) {
         parts.push(`Attachments (${fileData.attachments.length}): ${fileData.attachments.map(a => a.fileName || 'unnamed').join(', ')}`);
       }
       text = parts.join('\n').trim();
+
+      // Return the attachments' contents too, so the email and its
+      // attachments can be filed as ONE evidence item. Kept within a size
+      // budget so the response stays under Vercel's 4.5MB limit; anything
+      // skipped is named so the person knows it was not read.
+      const ATTACH_EXTS = ['pdf', 'jpg', 'jpeg', 'png', 'gif', 'webp', 'txt', 'html', 'htm', 'doc', 'docx'];
+      let budget = 3 * 1024 * 1024; // base64 characters
+      for (const a of fileData.attachments || []) {
+        const name = a.fileName || a.fileNameShort || 'attachment';
+        const ext = name.includes('.') ? name.split('.').pop().toLowerCase() : '';
+        const isImage = ['jpg', 'jpeg', 'png', 'gif', 'webp'].includes(ext);
+        if (a.attachmentHidden || (isImage && a.pidContentId)) continue; // inline logos and signature images
+        if (a.innerMsgContent) { skipped.push({ filename: a.innerMsgContentFields?.subject ? `Email "${a.innerMsgContentFields.subject}"` : name, reason: 'it is an email inside this email. Please upload it separately.' }); continue; }
+        if (!ATTACH_EXTS.includes(ext)) { skipped.push({ filename: name, reason: 'this file type is not supported.' }); continue; }
+        let b64;
+        try { b64 = Buffer.from(msgReader.getAttachment(a).content).toString('base64'); }
+        catch { skipped.push({ filename: name, reason: 'it could not be opened.' }); continue; }
+        if (b64.length > budget) { skipped.push({ filename: name, reason: 'it is too large to include. Please upload it separately.' }); continue; }
+        budget -= b64.length;
+        attachments.push({ filename: name, ext, data: b64 });
+      }
     }
 
     else {
@@ -98,7 +126,7 @@ export default async function handler(req, res) {
       return res.status(422).json({ error: 'Could not extract readable text from this file' });
     }
 
-    return res.status(200).json({ text, filename, ext });
+    return res.status(200).json({ text, filename, ext, attachments, skipped });
 
   } catch (e) {
     return res.status(500).json({ error: `Conversion failed: ${e.message}` });

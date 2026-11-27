@@ -13,7 +13,7 @@ if (!document.getElementById("goliathon-fonts")) {
 }
 
 const NAVY="#00274d",YELLOW="#ffc72c",WHITE="#ffffff",GREY="#555555",PANEL="#002a57",BORDER="#003a6e",LIGHT="#e8eef4";
-const SYSTEM=`You are the Goliathon AI created by Steve Conley, Founder of Get SAFE (Support After Financial Exploitation) and the Academy of Life Planning. Goliathon builds a professional evidence dossier for anyone in a dispute with an institution. Core values: dignity, precision, clarity, empowerment. Never give legal, financial, or mental-health advice. Write in plain English. Be warm, calm, and strategic. Never use markdown formatting (no asterisks, hashes, tables or horizontal rules) in any field: text is shown as written. For lists, use simple numbered lines (1. 2. 3.).`;
+const SYSTEM=`You are the Goliathon AI created by Steve Conley, Founder of Get SAFE (Support After Financial Exploitation) and the Academy of Life Planning. Goliathon builds a professional evidence dossier for anyone in a dispute with an institution. Core values: dignity, precision, clarity, empowerment. Never give legal, financial, or mental-health advice. Write in plain English. Be warm, calm, and strategic. Never use markdown formatting (no asterisks, hashes, tables or horizontal rules) in any field: text is shown as written. For lists, use simple numbered lines (1. 2. 3.). Never present an allegation of criminal conduct (fraud, corruption, conspiracy, collusion, cover-up) as established fact, and never state that anyone committed a crime: describe what the evidence shows and what remains to be explained.`;
 
 // Supabase
 async function saveDossierToDb(payload,isUpdate){
@@ -1062,13 +1062,18 @@ function GlanceList({title,items,emptyText,onSeeAll}){
   </div>);
 }
 
-function CaseAtAGlance({dossier,onSeeAll,onRefreshOverview,refreshingOverview}){
+function CaseAtAGlance({dossier,onSeeAll,onOpenAllegations,onRefreshOverview,refreshingOverview}){
   const tl=dossier.timeline||[],ev=dossier.evidence||[];
   const dated=sortTimeline(tl).filter(t=>parseDateLoose(t&&t.date)!=null);
   const range=dated.length?`${dated[0].date} – ${dated[dated.length-1].date}`:null;
   const status=[`${ev.length} document${ev.length!==1?"s":""}`,`${tl.length} timeline event${tl.length!==1?"s":""}`,range,dossier.updated_at?`updated ${formatDate(dossier.updated_at)}`:null].filter(Boolean);
   return(<Panel title="Case at a glance" icon="🧭">
     <div style={{display:"flex",gap:6,flexWrap:"wrap",marginBottom:14}}>{status.map((s,i)=><Tag key={i} color={i===0?YELLOW:"#7a96b0"}>{s}</Tag>)}</div>
+    {dossier.allegations?.items?.length>0&&<div style={{display:"flex",gap:8,flexWrap:"wrap",alignItems:"center",marginBottom:14,fontSize:12,color:LIGHT}}>
+      <span style={{fontFamily:"'Poppins', sans-serif",fontWeight:700,fontSize:12,color:YELLOW,letterSpacing:1,textTransform:"uppercase"}}>Central allegations</span>
+      {[1,2,3].map(n=>{const c=dossier.allegations.items.filter(a=>Number(a.level)===n).length;return c?<LevelBadge key={n} level={n} prefix={`${c} × `}/>:null;})}
+      {onOpenAllegations&&<button onClick={onOpenAllegations} style={linkBtn}>Open →</button>}
+    </div>}
     <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit, minmax(260px, 1fr))",gap:12,marginBottom:14}}>
       <GlanceList title="Next steps" items={toItems(dossier.next_steps)} emptyText="Next steps will appear as you add evidence." onSeeAll={onSeeAll}/>
       <GlanceList title="Key questions" items={toItems(dossier.key_questions)} emptyText="Key questions will appear as you add evidence." onSeeAll={onSeeAll}/>
@@ -1214,21 +1219,213 @@ function TextPanel({title,icon,text,download,disclaimer,intro,emptyText,cleanNum
   </Panel>);
 }
 
-function CaseView({dossier,readOnly,chat,onRefreshOverview,refreshingOverview,onEditWitness,onEditTimeline,onEditEvidence,onMoveEvidence}){
+// ── ALLEGATION LADDER, CHECK MY LETTER, ONE-PAGE BRIEF ───────────────────────
+// Three levels, each needing more evidence than the last:
+//   1 Unfair or damaging treatment  — the person's experience and judgement
+//   2 Procedural irregularity        — a rule or duty applied and was not followed
+//   3 Criminal conduct               — explicit, precise evidence of a dishonest act and intent
+// Before level 2 or 3, check there WAS a duty. Goliathon never decides that
+// a crime happened: it shows what the evidence filed so far supports, and
+// how to ask the right body to explain or investigate.
+const LADDER=[
+  {level:1,name:"Unfair or damaging treatment",needs:"Your own account of what happened and how it affected you. This is largely a matter of judgement, so it needs the least evidence.",color:"#7a96b0"},
+  {level:2,name:"Procedural irregularity",needs:"The specific rule, duty or procedure that applied, where it comes from, and a record showing it was not followed.",color:YELLOW},
+  {level:3,name:"Criminal conduct",needs:"Explicit, precise evidence of a dishonest act and intent by an identified person, such as fraud or corruption. Raise it with the police or prosecutor as a suspicion, not as a finding in a letter.",color:"#e57373"},
+];
+const LADDER_RULES=`THE ALLEGATION LADDER (apply it strictly):
+Level 1, unfair or damaging treatment: the person's experience that they were treated unfairly. Needs their account and context.
+Level 2, procedural irregularity: a decision or process did not follow a rule, duty or procedure that applied. Needs (a) the specific rule or duty and its source and (b) a record showing it was not followed.
+Level 3, criminal conduct (fraud, corruption, collusion, conspiracy, perverting the course of justice): needs explicit, precise evidence of a dishonest act and intent by an identified person.
+DUTY CHECK: before level 2 or 3, ask whether the person or body actually had a duty to act. If no duty can be identified from the evidence, the point is level 1.
+Evidence of something unexplained is not evidence of a crime, and evidence of an error is not evidence of dishonesty. Never state that anyone committed a crime; a level 3 point is a suspicion to report to the police or a prosecutor.`;
+function levelInfo(n){return LADDER.find(l=>l.level===Number(n))||LADDER[0];}
+function LevelBadge({level,prefix}){const l=levelInfo(level);return <span style={{background:l.color+"20",color:l.color,border:`1px solid ${l.color}60`,borderRadius:20,padding:"2px 10px",fontSize:11,fontWeight:700,fontFamily:"'Poppins', sans-serif",whiteSpace:"nowrap"}}>{prefix||""}Level {l.level} · {l.name}</span>;}
+
+function LadderKey(){
+  return(<div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit, minmax(220px, 1fr))",gap:8,marginBottom:14}}>
+    {LADDER.map(l=>(<div key={l.level} style={{background:"#001e3d",border:`1px solid ${BORDER}`,borderTop:`3px solid ${l.color}`,borderRadius:8,padding:"10px 12px"}}>
+      <div style={{fontFamily:"'Poppins', sans-serif",fontWeight:700,fontSize:12,color:l.color,marginBottom:4}}>Level {l.level} · {l.name}</div>
+      <div style={{fontSize:12,color:LIGHT,lineHeight:1.6}}>{l.needs}</div>
+    </div>))}
+  </div>);
+}
+
+async function generateAllegations(dossier){
+  const prompt=`${buildExistingCaseContext(dossier)}
+
+${LADDER_RULES}
+
+Identify the 3 to 5 CENTRAL allegations in this case: the points the person most needs answered or put right. For each, judge the HIGHEST level the evidence filed so far actually supports, not the level the person may believe. Where the person's own documents frame a point at a higher level than the evidence supports, record that in level_claimed. Be respectful: the point is to show what each allegation needs, not to dismiss it.
+
+Return ONLY valid JSON, with no text before or after it:
+{"allegations":[{"allegation":"one plain sentence, written as an allegation and not as a fact","against":"the person or body it concerns","level":1,"level_claimed":1,"duty":"the specific rule, duty or procedure relied on and its source, or Not yet identified","evidence":["#012","#045"],"evidence_summary":"at most 50 words: what the cited items show","missing":"at most 50 words: what would be needed to support this at its level, or to raise it a level","suggested_wording":"one or two sentences of evidence-led wording for a letter: describe the evidence, name the discrepancy, ask the right body to explain or investigate"}],"note":"one sentence on the overall picture"}`;
+  const parsed=extractJson(await callClaude([{role:"user",content:prompt}]));
+  if(!parsed||!Array.isArray(parsed.allegations))throw new Error("The analysis came back incomplete. Please try again.");
+  return {items:parsed.allegations.slice(0,5).map(a=>({...a,level:Math.min(3,Math.max(1,Number(a.level)||1)),level_claimed:a.level_claimed?Math.min(3,Math.max(1,Number(a.level_claimed)||1)):null})),note:toDisplayText(parsed.note),generated_at:new Date().toISOString(),evidence_count:(dossier.evidence||[]).length};
+}
+
+function AllegationsView({dossier,readOnly,onSave}){
+  const [busy,setBusy]=useState(false);
+  const al=dossier.allegations;
+  const stale=al&&al.evidence_count!==(dossier.evidence||[]).length;
+  const run=async()=>{setBusy(true);try{onSave(await generateAllegations(dossier));}catch(e){alert("Couldn't draft the allegations just now. Please try again.\n\n"+e.message);}setBusy(false);};
+  return(<Panel title="Central Allegations" icon="🪜" action={!readOnly&&<Btn small variant="ghost" disabled={busy||!(dossier.evidence||[]).length} onClick={run}>{busy?"Working…":al?"⟳ Redo":"Draft them"}</Btn>}>
+    <p style={{margin:"0 0 12px",fontSize:13,color:LIGHT,lineHeight:1.7}}>Every allegation sits on a ladder. The higher the level, the more precise the evidence must be. <strong>Don't send the verdict. Send the evidence.</strong></p>
+    <LadderKey/>
+    <p style={{margin:"0 0 14px",fontSize:12,color:"#a0b4c8",lineHeight:1.6}}>Before claiming level 2 or 3, check there was a <strong>duty</strong>: a rule that required them to act. If none can be found, the point stays at level 1, and it may still matter a great deal.</p>
+    {!al?<EmptyState text={readOnly?"No allegations drafted yet.":busy?"Reading the whole case…":"Goliathon can draft the central allegations in this case and show what each one needs. You stay the author: check, correct and reword them."}/>:<>
+      {stale&&!readOnly&&<p style={{margin:"0 0 10px",fontSize:12,color:YELLOW}}>Evidence has been added since these were drafted. Press Redo to update them.</p>}
+      {al.note&&<p style={{margin:"0 0 12px",fontSize:13,color:LIGHT,lineHeight:1.7,fontStyle:"italic"}}>{al.note}</p>}
+      {(al.items||[]).map((a,i)=>(<div key={i} style={{background:"#001e3d",border:`1px solid ${BORDER}`,borderLeft:`4px solid ${levelInfo(a.level).color}`,borderRadius:8,padding:"12px 14px",marginBottom:10}}>
+        <div style={{display:"flex",gap:6,flexWrap:"wrap",marginBottom:8}}>
+          <LevelBadge level={a.level} prefix="Supported: "/>
+          {a.level_claimed&&a.level_claimed>a.level&&<LevelBadge level={a.level_claimed} prefix="Framed as: "/>}
+        </div>
+        <div style={{fontSize:14,fontWeight:600,color:WHITE,lineHeight:1.6,marginBottom:4}}><InlineText text={toDisplayText(a.allegation)}/></div>
+        {a.against&&<div style={{fontSize:12,color:"#a0b4c8",marginBottom:8}}>Concerns: {toDisplayText(a.against)}</div>}
+        {[["Duty or rule relied on",a.duty],["Evidence",[(a.evidence||[]).join(", "),toDisplayText(a.evidence_summary)].filter(Boolean).join(": ")],["What's missing",a.missing],["Evidence-led wording",a.suggested_wording]].filter(([,v])=>v).map(([k,v])=>(<p key={k} style={{margin:"0 0 6px",fontSize:12,color:k==="Evidence-led wording"?YELLOW:LIGHT,lineHeight:1.6}}><span style={{fontWeight:600,textTransform:"uppercase",fontSize:10,letterSpacing:"0.05em",color:"#a0b4c8"}}>{k}: </span><InlineText text={toDisplayText(v)}/></p>))}
+      </div>))}
+      <AIDisclaimer/>
+      <p style={{margin:"6px 0 0",fontSize:11,color:"#5a7a96"}}>Drafted {formatDate(al.generated_at)} from {al.evidence_count} items. Saved in this browser with the case.</p>
+    </>}
+  </Panel>);
+}
+
+function CopyBtn({text,label="Copy"}){
+  const [done,setDone]=useState(false);
+  return <Btn small variant="ghost" onClick={async()=>{try{await navigator.clipboard.writeText(text);setDone(true);setTimeout(()=>setDone(false),1500);}catch{alert("Couldn't copy. Please select the text and copy it instead.");}}}>{done?"✓ Copied":label}</Btn>;
+}
+const fieldLabel={display:"block",fontSize:11,color:"#7a96b0",marginBottom:4,textTransform:"uppercase",letterSpacing:"0.05em"};
+const areaStyle={...smallInput,width:"100%",lineHeight:1.7,resize:"vertical",fontFamily:"inherit",marginBottom:10};
+
+function LetterCheck({dossier}){
+  const [draft,setDraft]=useState("");
+  const [subject,setSubject]=useState("");
+  const [recipients,setRecipients]=useState("");
+  const [busy,setBusy]=useState(false);
+  const [result,setResult]=useState(null);
+  const run=async()=>{
+    setBusy(true);setResult(null);
+    const prompt=`${buildExistingCaseContext(dossier)}
+
+${LADDER_RULES}
+
+The person has drafted the letter below and wants it checked before sending. Check it against the evidence in this case and the ladder. Your job is to help it get a precise answer: keep the person's voice, objections and requests; do not soften a genuine point into nothing, do not concede anything, and do not add facts that are not in the letter or the evidence. A suspicion of crime can stay, worded as a concern for the right body to investigate, not as a finding.
+
+GOOD PRACTICE: one institution, one issue and one clear request per letter; a subject line that names the issue, not an accusation; every person copied in has a reason to be; calm, precise wording; evidence described first, then the discrepancy, then the question or action requested.
+
+SUBJECT: ${subject||"(none given)"}
+RECIPIENTS AND COPIES: ${recipients||"(none given)"}
+DRAFT LETTER:
+${draft}
+
+Return ONLY valid JSON, with no text before or after it:
+{"summary":"two sentences: the letter's main strength, then its main risk","request":"the specific answer or action the letter asks for, or null if none is clear","checks":[{"check":"One institution, one issue","ok":true,"note":"one short sentence"},{"check":"A clear request","ok":true,"note":""},{"check":"Subject names the issue, not an accusation","ok":true,"note":""},{"check":"Everyone copied in has a reason","ok":true,"note":""},{"check":"Allegations match the evidence","ok":true,"note":""},{"check":"Calm, precise wording","ok":true,"note":""}],"flags":[{"quote":"the exact sentence from the draft","issue":"Allegation stated as fact / Goes beyond the evidence / No duty identified / Unclear request / Emotive or absolute wording","level_claimed":3,"level_supported":2,"why":"one sentence","rewrite":"evidence-led replacement sentence"}],"subject_suggestion":"a subject line naming the issue","rewrite":"the full revised letter in plain text, same voice and sign-off"}
+At most 10 flags, most important first.`;
+    try{const p=extractJson(await callClaude([{role:"user",content:prompt}]));if(!p||!p.rewrite)throw new Error("The check came back incomplete. Please try again.");setResult(p);}
+    catch(e){alert("Couldn't check the letter just now. Please try again.\n\n"+e.message);}
+    setBusy(false);
+  };
+  return(<Panel title="Check my letter" icon="🔎">
+    <p style={{margin:"0 0 12px",fontSize:12,color:"#a0b4c8",lineHeight:1.6}}>Paste a letter or email before you send it. Goliathon checks each point against your evidence and the allegation ladder, and suggests evidence-led wording. Nothing here is saved or sent anywhere except to the AI for this check.</p>
+    <label style={fieldLabel}>Subject line</label>
+    <input value={subject} onChange={e=>setSubject(e.target.value)} placeholder="e.g. Request for the court record of the June 2024 order" style={{...smallInput,width:"100%",marginBottom:10}}/>
+    <label style={fieldLabel}>To and copied in (optional)</label>
+    <input value={recipients} onChange={e=>setRecipients(e.target.value)} placeholder="e.g. To: the Board. Cc: my MP" style={{...smallInput,width:"100%",marginBottom:10}}/>
+    <label style={fieldLabel}>Your draft</label>
+    <textarea value={draft} onChange={e=>setDraft(e.target.value)} rows={10} placeholder="Paste your letter or email here…" aria-label="Your draft letter" style={areaStyle}/>
+    <div style={{display:"flex",justifyContent:"flex-end",marginBottom:result?14:0}}><Btn small onClick={run} disabled={busy||draft.trim().length<40}>{busy?"Checking…":"Check my letter"}</Btn></div>
+    {result&&<div>
+      <div style={{background:"#001e3d",border:`1px solid ${BORDER}`,borderRadius:8,padding:"12px 14px",marginBottom:12}}>
+        <p style={{margin:"0 0 8px",fontSize:13,color:LIGHT,lineHeight:1.7}}>{toDisplayText(result.summary)}</p>
+        <p style={{margin:0,fontSize:12,color:result.request?YELLOW:"#e57373"}}><strong>What it asks for: </strong>{result.request?toDisplayText(result.request):"No clear request yet. Say exactly what answer or action you want."}</p>
+      </div>
+      <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit, minmax(240px, 1fr))",gap:6,marginBottom:12}}>
+        {(result.checks||[]).map((c,i)=>(<div key={i} style={{display:"flex",gap:8,fontSize:12,lineHeight:1.5,color:LIGHT,background:"#001e3d",border:`1px solid ${BORDER}`,borderRadius:8,padding:"8px 10px"}}><span style={{color:c.ok?"#7e9e82":"#e57373",fontWeight:700}}>{c.ok?"✓":"!"}</span><span><strong>{c.check}</strong>{c.note?<span style={{color:"#a0b4c8"}}> · {c.note}</span>:null}</span></div>))}
+      </div>
+      {(result.flags||[]).length>0&&<>
+        <div style={{fontFamily:"'Poppins', sans-serif",fontWeight:700,fontSize:12,color:YELLOW,letterSpacing:1,textTransform:"uppercase",margin:"4px 0 8px"}}>Sentences to look at ({result.flags.length})</div>
+        {result.flags.map((f,i)=>(<div key={i} style={{background:"#001e3d",border:`1px solid ${BORDER}`,borderRadius:8,padding:"10px 12px",marginBottom:8}}>
+          <div style={{display:"flex",gap:6,flexWrap:"wrap",marginBottom:6}}><Tag color="#e57373">{toDisplayText(f.issue)}</Tag>{f.level_claimed&&f.level_supported&&Number(f.level_claimed)>Number(f.level_supported)&&<Tag color="#a0b4c8">Claims level {f.level_claimed} · evidence supports level {f.level_supported}</Tag>}</div>
+          <p style={{margin:"0 0 4px",fontSize:12,color:"#a0b4c8",lineHeight:1.6,textDecoration:"line-through",textDecorationColor:"#e5737380"}}>{toDisplayText(f.quote)}</p>
+          <p style={{margin:"0 0 4px",fontSize:12,color:YELLOW,lineHeight:1.6}}>→ {toDisplayText(f.rewrite)}</p>
+          {f.why&&<p style={{margin:0,fontSize:11,color:"#7a96b0",lineHeight:1.5}}>{toDisplayText(f.why)}</p>}
+        </div>))}
+      </>}
+      <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:8,margin:"12px 0 6px"}}>
+        <span style={{fontFamily:"'Poppins', sans-serif",fontWeight:700,fontSize:12,color:YELLOW,letterSpacing:1,textTransform:"uppercase"}}>Suggested version</span>
+        <CopyBtn text={(result.subject_suggestion?"Subject: "+toDisplayText(result.subject_suggestion)+"\n\n":"")+toDisplayText(result.rewrite)}/>
+      </div>
+      {result.subject_suggestion&&<p style={{margin:"0 0 6px",fontSize:12,color:LIGHT}}><strong>Subject: </strong>{toDisplayText(result.subject_suggestion)}</p>}
+      <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit, minmax(280px, 1fr))",gap:10}}>
+        <div><div style={fieldLabel}>Your draft</div><p style={{margin:0,fontSize:12,color:"#a0b4c8",lineHeight:1.7,whiteSpace:"pre-wrap",background:"#001830",padding:12,borderRadius:8,border:"1px solid #1e3a5f"}}>{draft}</p></div>
+        <div><div style={fieldLabel}>Suggested</div><p style={{margin:0,fontSize:12,color:LIGHT,lineHeight:1.7,whiteSpace:"pre-wrap",background:"#001830",padding:12,borderRadius:8,border:`1px solid ${YELLOW}40`}}>{toDisplayText(result.rewrite)}</p></div>
+      </div>
+      <AIDisclaimer/>
+    </div>}
+  </Panel>);
+}
+
+const BRIEF_AUDIENCES=[
+  {id:"journalist",label:"A journalist",hint:"Lead with the central allegation and the evidence for it. Journalists need the specific allegation and its proof up front."},
+  {id:"mp",label:"An MP or councillor",hint:"Lead with what you want them to do. Keep to the issue that is theirs to act on."},
+  {id:"regulator",label:"A regulator or ombudsman",hint:"Lead with the decision or conduct complained about and the rule it breached."},
+  {id:"solicitor",label:"A solicitor or adviser",hint:"Lead with the decision you need help with, the key dates and any deadlines."},
+];
+function BriefBuilder({dossier}){
+  const [aud,setAud]=useState("journalist");
+  const [ask,setAsk]=useState("");
+  const [busy,setBusy]=useState(false);
+  const [brief,setBrief]=useState("");
+  const a=BRIEF_AUDIENCES.find(x=>x.id===aud);
+  const run=async()=>{
+    setBusy(true);setBrief("");
+    const al=dossier.allegations?.items?.length?"\nCentral allegations already drafted:\n"+dossier.allegations.items.map((x,i)=>`${i+1}. [Level ${x.level}] ${toDisplayText(x.allegation)} Evidence: ${(x.evidence||[]).join(", ")}`).join("\n"):"";
+    const prompt=`${buildExistingCaseContext(dossier)}${al}
+
+${LADDER_RULES}
+
+Write a one-page brief, in the first person, for ${a.label.toLowerCase()}. It is a DRAFT for the person to rewrite in their own words, so keep it plain and short: at most 350 words. ${a.hint}
+What the person wants from this reader: ${ask||"(not stated: end by asking whether they can help, and with what)"}
+
+Structure, using these plain headings on their own lines: WHAT I AM ASKING; WHAT HAPPENED (at most 5 sentences); MY CENTRAL POINTS (at most 3, each with its level on the ladder and the evidence item numbers that support it); WHAT I CAN SEND YOU. State every point at the level the evidence supports. Never say anyone committed a crime; where there is a suspicion, say it is a concern you have asked, or will ask, the right body to investigate. No markdown symbols.
+
+Return ONLY valid JSON, with no text before or after it: {"brief":"the brief as plain text"}`;
+    try{const p=extractJson(await callClaude([{role:"user",content:prompt}]));if(!p||!p.brief)throw new Error("The brief came back empty. Please try again.");setBrief(toDisplayText(p.brief));}
+    catch(e){alert("Couldn't write the brief just now. Please try again.\n\n"+e.message);}
+    setBusy(false);
+  };
+  return(<Panel title="One-page brief" icon="📄">
+    <p style={{margin:"0 0 12px",fontSize:12,color:"#a0b4c8",lineHeight:1.6}}>Busy professionals rarely read long AI summaries. This drafts one short page that leads with your request and your strongest evidence. Rewrite it in your own words before sending, and offer the full dossier only if they ask.</p>
+    <label style={fieldLabel}>Who is it for?</label>
+    <div style={{display:"flex",gap:6,flexWrap:"wrap",marginBottom:10}}>{BRIEF_AUDIENCES.map(x=><button key={x.id} onClick={()=>setAud(x.id)} aria-pressed={aud===x.id} style={{background:aud===x.id?YELLOW:PANEL,color:aud===x.id?NAVY:LIGHT,border:`1px solid ${aud===x.id?YELLOW:BORDER}`,borderRadius:20,padding:"6px 12px",fontFamily:"'Poppins', sans-serif",fontWeight:700,fontSize:12,cursor:"pointer"}}>{x.label}</button>)}</div>
+    <label style={fieldLabel}>What do you want them to do?</label>
+    <input value={ask} onChange={e=>setAsk(e.target.value)} placeholder="e.g. Ask the court to produce the June 2024 order" style={{...smallInput,width:"100%",marginBottom:10}}/>
+    <div style={{display:"flex",justifyContent:"flex-end",marginBottom:brief?12:0}}><Btn small onClick={run} disabled={busy||!(dossier.evidence||[]).length}>{busy?"Writing…":"Draft the brief"}</Btn></div>
+    {brief&&<>
+      <div style={{display:"flex",justifyContent:"flex-end",gap:6,marginBottom:6}}><CopyBtn text={brief}/><Btn small variant="ghost" onClick={()=>downloadText("Goliathon_brief.txt",brief)}>↓</Btn></div>
+      <div style={{background:"#001830",padding:14,borderRadius:8,border:"1px solid #1e3a5f"}}><FormattedText text={brief} color={LIGHT} lineHeight={1.8}/></div>
+      <AIDisclaimer/>
+    </>}
+  </Panel>);
+}
+
+function CaseView({dossier,readOnly,chat,onRefreshOverview,refreshingOverview,onEditWitness,onEditTimeline,onEditEvidence,onMoveEvidence,onSaveAllegations}){
   const [tab,setTab]=useState("summary");
   const tabsRef=useRef(null);
   const go=id=>{setTab(id);setTimeout(()=>tabsRef.current?.scrollIntoView({behavior:"smooth",block:"start"}),0);};
   const tabs=[
     {id:"summary",label:"Summary"},
+    (!readOnly||dossier.allegations)?{id:"allegations",label:"Allegations",count:dossier.allegations?.items?.length}:null,
     {id:"timeline",label:"Timeline",count:(dossier.timeline||[]).length},
     {id:"evidence",label:"Evidence",count:(dossier.evidence||[]).length},
     {id:"statement",label:"Statement"},
-    dossier.burden_of_proof_letter?{id:"letters",label:"Letters"}:null,
+    (!readOnly||dossier.burden_of_proof_letter)?{id:"letters",label:"Letters"}:null,
     chat?{id:"chat",label:"Chat"}:null,
   ].filter(Boolean);
   const active=tabs.some(t=>t.id===tab)?tab:"summary";
   return(<div>
-    <CaseAtAGlance dossier={dossier} onSeeAll={()=>go("summary")} onRefreshOverview={readOnly?null:onRefreshOverview} refreshingOverview={refreshingOverview}/>
+    <CaseAtAGlance dossier={dossier} onSeeAll={()=>go("summary")} onOpenAllegations={()=>go("allegations")} onRefreshOverview={readOnly?null:onRefreshOverview} refreshingOverview={refreshingOverview}/>
     <div ref={tabsRef} style={{scrollMarginTop:0}}/>
     <CaseTabs tabs={tabs} active={active} onChange={go}/>
     {active==="summary"&&<>
@@ -1240,6 +1437,8 @@ function CaseView({dossier,readOnly,chat,onRefreshOverview,refreshingOverview,on
     {active==="timeline"&&<TimelineView dossier={dossier} onEdit={readOnly?null:onEditTimeline}/>}
     {active==="evidence"&&<EvidenceView dossier={dossier} onEdit={readOnly?null:onEditEvidence} onMove={readOnly?null:onMoveEvidence}/>}
     {active==="statement"&&<StatementView dossier={dossier} onEdit={readOnly?null:onEditWitness}/>}
+    {active==="allegations"&&<AllegationsView dossier={dossier} readOnly={readOnly||!onSaveAllegations} onSave={onSaveAllegations}/>}
+    {active==="letters"&&!readOnly&&<><LetterCheck dossier={dossier}/><BriefBuilder dossier={dossier}/></>}
     {active==="letters"&&dossier.burden_of_proof_letter&&<Panel title="Burden of Proof Challenge Letter" icon="✉️" action={<Btn small variant="ghost" onClick={()=>downloadText("Challenge_Letter.txt",dossier.burden_of_proof_letter)}>↓</Btn>}><p style={{margin:"0 0 10px",fontSize:12,color:"#a0b4c8",lineHeight:1.6}}>This letter asks the claimant to prove their case before you are required to respond. Review, adapt if needed, then send by recorded post or email with read receipt.</p><p style={{margin:0,fontSize:13,lineHeight:1.8,color:LIGHT,whiteSpace:"pre-wrap",background:"#001830",padding:12,borderRadius:8,border:"1px solid #1e3a5f"}}>{dossier.burden_of_proof_letter}</p></Panel>}
     {active==="chat"&&chat&&<Panel title="Chat With This Case" icon="💬">{chat}</Panel>}
   </div>);
@@ -1361,7 +1560,8 @@ export default function GoliathonApp(){
     const newDossier=incoming&&Array.isArray(incoming.timeline)?{...incoming,timeline:sortTimeline(incoming.timeline)}:incoming;
     const updated=cases.map(c=>c.id===activeId?{...c,dossier:newDossier,title:newDossier.case_title||c.title}:c);
     updateCases(updated);setSaved(false);setSaveFailed(false);
-    const {burden_of_proof_letter:_bpl,...dossierForDb}=newDossier;
+    // allegations stay in this browser until the dossiers table has a column for them.
+    const {burden_of_proof_letter:_bpl,allegations:_al,...dossierForDb}=newDossier;
     try{await saveDossierToDb({...dossierForDb,share_id:shareId},isSavedRef.current);isSavedRef.current=true;setSaved(true);}
     catch(e){console.error("Save error:",e);setSaveFailed(true);}
   },[cases,activeId,shareId,updateCases]);
@@ -1750,7 +1950,7 @@ export default function GoliathonApp(){
           {dossier&&<Btn small variant="subtle" onClick={handleReset}>↺ Reset</Btn>}
           {dossier&&<Btn small danger onClick={handleDeleteDossier}>🗑 Delete</Btn>}
           {dossier&&<Btn small variant="ghost" onClick={async()=>{
-            try{const {burden_of_proof_letter:_bpl,...dForDb}=dossier;await saveDossierToDb({...dForDb,share_id:shareId},isSavedRef.current);isSavedRef.current=true;setSaved(true);setSaveFailed(false);setShowShare(true);}
+            try{const {burden_of_proof_letter:_bpl,allegations:_al,...dForDb}=dossier;await saveDossierToDb({...dForDb,share_id:shareId},isSavedRef.current);isSavedRef.current=true;setSaved(true);setSaveFailed(false);setShowShare(true);}
             catch(e){setSaveFailed(true);alert("Could not save to the cloud before sharing. Please check your connection and try again.\n\n"+e.message);}
           }}>🔗 Share</Btn>}
           {dossier&&<Btn small onClick={()=>setShowDownload(true)}>↓ Download</Btn>}
@@ -1913,6 +2113,7 @@ export default function GoliathonApp(){
         refreshingOverview={refreshingOverview} onRefreshOverview={handleRefreshOverview}
         onEditWitness={()=>setEditingWitness(true)} onEditTimeline={i=>setEditingTimeline(i)}
         onEditEvidence={ri=>setEditingEvidence(ri)} onMoveEvidence={handleMoveEvidence}
+        onSaveAllegations={al=>updateDossier({...dossier,allegations:al})}
         chat={saved?<CaseChat caseId={shareId}/>:<p style={{margin:0,fontSize:12,color:"#7a96b0",lineHeight:1.7}}>Save this case to start chatting with it.</p>}/>}
     </div>
 

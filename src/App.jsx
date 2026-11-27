@@ -1,6 +1,7 @@
 import { useState, useRef, useCallback, useEffect } from "react";
 import CaseChat from "./components/CaseChat";
 import OwnKeyPanel from "./components/OwnKeyPanel";
+import FormattedText,{InlineText} from "./components/FormattedText";
 import { aiHeaders, notifyAiError } from "./lib/userKey";
 import { createClient } from "@supabase/supabase-js";
 
@@ -12,7 +13,7 @@ if (!document.getElementById("goliathon-fonts")) {
 }
 
 const NAVY="#00274d",YELLOW="#ffc72c",WHITE="#ffffff",GREY="#555555",PANEL="#002a57",BORDER="#003a6e",LIGHT="#e8eef4";
-const SYSTEM=`You are the Goliathon AI created by Steve Conley, Founder of Get SAFE (Support After Financial Exploitation) and the Academy of Life Planning. Goliathon builds a professional evidence dossier for anyone in a dispute with an institution. Core values: dignity, precision, clarity, empowerment. Never give legal, financial, or mental-health advice. Write in plain English. Be warm, calm, and strategic.`;
+const SYSTEM=`You are the Goliathon AI created by Steve Conley, Founder of Get SAFE (Support After Financial Exploitation) and the Academy of Life Planning. Goliathon builds a professional evidence dossier for anyone in a dispute with an institution. Core values: dignity, precision, clarity, empowerment. Never give legal, financial, or mental-health advice. Write in plain English. Be warm, calm, and strategic. Never use markdown formatting (no asterisks, hashes, tables or horizontal rules) in any field: text is shown as written. For lists, use simple numbered lines (1. 2. 3.).`;
 
 // Supabase
 async function saveDossierToDb(payload,isUpdate){
@@ -930,24 +931,221 @@ function DownloadModal({dossier,onClose}){
   </div>);
 }
 
+// ── CASE VIEW ─────────────────────────────────────────────────────────────────
+// One layout for every case, small or very large (tested with 130+ items):
+//   1. "Case at a glance": status, top next steps and key questions, overview.
+//   2. A sticky tab bar, so only one long section is on screen at a time.
+//   3. Timeline grouped by year, evidence as compact searchable rows.
+// Used by both the main page and the read-only shared view (readOnly).
+
+// Splits a numbered or bulleted block into separate items.
+function toItems(value){
+  const text=cleanNumbering(toDisplayText(value));
+  const items=[];
+  text.split("\n").forEach(raw=>{
+    const line=raw.trim();
+    if(!line)return;
+    const m=line.match(/^(?:\d{1,2}[.)]|[-*•])\s+(.*)$/);
+    if(m)items.push(m[1]);
+    else if(items.length)items[items.length-1]+=" "+line;
+    else items.push(line);
+  });
+  return items;
+}
+function yearOf(date){const m=String(date||"").match(/\b(1[89]\d{2}|20\d{2})\b/);return m?m[1]:"Undated";}
+const smallInput={background:"#001e3d",border:`1px solid ${BORDER}`,borderRadius:8,padding:"7px 10px",color:WHITE,fontSize:13,outline:"none",fontFamily:"'Open Sans', sans-serif",boxSizing:"border-box"};
+const linkBtn={background:"none",border:"none",color:YELLOW,fontSize:12,fontWeight:600,cursor:"pointer",padding:0,fontFamily:"'Poppins', sans-serif"};
+const tinyBtn={background:"none",border:`1px solid ${BORDER}`,borderRadius:4,padding:"2px 7px",color:YELLOW,fontSize:10,cursor:"pointer",flexShrink:0};
+
+function GlanceList({title,items,emptyText,onSeeAll}){
+  return(<div style={{background:"#001e3d",border:`1px solid ${BORDER}`,borderRadius:10,padding:"12px 14px"}}>
+    <div style={{fontFamily:"'Poppins', sans-serif",fontWeight:700,fontSize:12,color:YELLOW,letterSpacing:1,textTransform:"uppercase",marginBottom:8}}>{title}</div>
+    {!items.length?<EmptyState text={emptyText}/>:<>
+      {items.slice(0,3).map((it,i)=>(<div key={i} style={{display:"flex",gap:8,marginBottom:6,fontSize:13,lineHeight:1.6,color:LIGHT}}><span style={{color:YELLOW,fontWeight:700,minWidth:16}}>{i+1}.</span><span style={{flex:1}}><InlineText text={it}/></span></div>))}
+      {items.length>3&&<button onClick={onSeeAll} style={linkBtn}>See all {items.length} →</button>}
+    </>}
+  </div>);
+}
+
+function CaseAtAGlance({dossier,onSeeAll,onRefreshOverview,refreshingOverview}){
+  const tl=dossier.timeline||[],ev=dossier.evidence||[];
+  const dated=sortTimeline(tl).filter(t=>parseDateLoose(t&&t.date)!=null);
+  const range=dated.length?`${dated[0].date} – ${dated[dated.length-1].date}`:null;
+  const status=[`${ev.length} document${ev.length!==1?"s":""}`,`${tl.length} timeline event${tl.length!==1?"s":""}`,range,dossier.updated_at?`updated ${formatDate(dossier.updated_at)}`:null].filter(Boolean);
+  return(<Panel title="Case at a glance" icon="🧭">
+    <div style={{display:"flex",gap:6,flexWrap:"wrap",marginBottom:14}}>{status.map((s,i)=><Tag key={i} color={i===0?YELLOW:"#7a96b0"}>{s}</Tag>)}</div>
+    <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit, minmax(260px, 1fr))",gap:12,marginBottom:14}}>
+      <GlanceList title="Next steps" items={toItems(dossier.next_steps)} emptyText="Next steps will appear as you add evidence." onSeeAll={onSeeAll}/>
+      <GlanceList title="Key questions" items={toItems(dossier.key_questions)} emptyText="Key questions will appear as you add evidence." onSeeAll={onSeeAll}/>
+    </div>
+    <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:8,marginBottom:6}}>
+      <span style={{fontFamily:"'Poppins', sans-serif",fontWeight:700,fontSize:12,color:YELLOW,letterSpacing:1,textTransform:"uppercase"}}>Overview</span>
+      <div style={{display:"flex",gap:6}}>
+        {onRefreshOverview&&<Btn small variant="ghost" disabled={refreshingOverview||!tl.length} onClick={onRefreshOverview}>{refreshingOverview?"Refreshing…":"⟳ Refresh"}</Btn>}
+        <Btn small variant="ghost" onClick={()=>downloadPdf("overview",dossier)}>↓</Btn>
+      </div>
+    </div>
+    {dossier.overview?<FormattedText text={toDisplayText(dossier.overview)} color={LIGHT} lineHeight={1.8}/>:<EmptyState text="Building overview…"/>}
+  </Panel>);
+}
+
+function CaseTabs({tabs,active,onChange}){
+  return(<div style={{position:"sticky",top:0,zIndex:20,background:NAVY,padding:"8px 0",marginBottom:12,borderBottom:`1px solid ${BORDER}`}}>
+    <div role="tablist" style={{display:"flex",gap:6,overflowX:"auto"}}>
+      {tabs.map(t=>{const on=t.id===active;return(
+        <button key={t.id} role="tab" aria-selected={on} onClick={()=>onChange(t.id)} style={{flexShrink:0,background:on?YELLOW:PANEL,color:on?NAVY:LIGHT,border:`1px solid ${on?YELLOW:BORDER}`,borderRadius:20,padding:"7px 14px",fontFamily:"'Poppins', sans-serif",fontWeight:700,fontSize:12,cursor:"pointer",whiteSpace:"nowrap"}}>
+          {t.label}{t.count!=null&&<span style={{marginLeft:6,opacity:0.7,fontWeight:600}}>{t.count}</span>}
+        </button>);})}
+    </div>
+  </div>);
+}
+
+function TimelineView({dossier,onEdit}){
+  const timeline=dossier.timeline||[];
+  const [q,setQ]=useState("");
+  const [openYears,setOpenYears]=useState(null); // null = default: latest year open
+  const [shown,setShown]=useState({});
+  const sorted=sortTimeline(timeline);
+  const pos=new Map(sorted.map((t,i)=>[t,i+1]));
+  const needle=q.trim().toLowerCase();
+  const visible=needle?sorted.filter(t=>`${t.date||""} ${t.event||""} ${t.evidence||""}`.toLowerCase().includes(needle)):sorted;
+  const groups=[];visible.forEach(t=>{const y=yearOf(t.date);let g=groups.find(x=>x.year===y);if(!g){g={year:y,items:[]};groups.push(g);}g.items.push(t);});
+  // Newest year first (events inside a year stay in date order); undated last.
+  groups.sort((a,b)=>a.year==="Undated"?1:b.year==="Undated"?-1:b.year.localeCompare(a.year));
+  const datedYears=groups.filter(g=>g.year!=="Undated");
+  const defaultOpen=new Set(datedYears.length?[datedYears[0].year]:groups.map(g=>g.year));
+  const isOpen=y=>needle?true:(openYears||defaultOpen).has(y);
+  const toggle=y=>{const s=new Set(openYears||defaultOpen);s.has(y)?s.delete(y):s.add(y);setOpenYears(s);};
+  return(<Panel title={`Timeline — ${timeline.length} event${timeline.length!==1?"s":""}`} icon="📅" action={<Btn small variant="ghost" onClick={()=>downloadPdf("timeline",dossier)}>↓</Btn>}>
+    {!timeline.length?<EmptyState text="Timeline building…"/>:<>
+      <div style={{display:"flex",gap:8,flexWrap:"wrap",alignItems:"center",marginBottom:12}}>
+        <input value={q} onChange={e=>setQ(e.target.value)} placeholder="Search the timeline…" aria-label="Search the timeline" style={{...smallInput,flex:1,minWidth:180}}/>
+        {!needle&&<><button style={linkBtn} onClick={()=>setOpenYears(new Set(groups.map(g=>g.year)))}>Open all</button><button style={linkBtn} onClick={()=>setOpenYears(new Set())}>Close all</button></>}
+      </div>
+      {needle&&<p style={{margin:"0 0 10px",fontSize:12,color:"#7a96b0"}}>{visible.length} of {timeline.length} events match.</p>}
+      {groups.map(g=>{const open=isOpen(g.year);const limit=shown[g.year]||25;return(<div key={g.year} style={{marginBottom:8}}>
+        <button onClick={()=>!needle&&toggle(g.year)} aria-expanded={open} style={{width:"100%",display:"flex",justifyContent:"space-between",alignItems:"center",background:"#001e3d",border:`1px solid ${BORDER}`,borderRadius:8,padding:"8px 12px",color:WHITE,cursor:needle?"default":"pointer",fontFamily:"'Poppins', sans-serif",fontWeight:700,fontSize:13}}>
+          <span>{g.year} <span style={{color:"#7a96b0",fontWeight:600,fontSize:12}}>· {g.items.length} event{g.items.length!==1?"s":""}</span></span><span style={{color:YELLOW}}>{open?"▾":"▸"}</span>
+        </button>
+        {open&&<div style={{padding:"10px 4px 0"}}>
+          {g.items.slice(0,limit).map(t=>{const raw=timeline.indexOf(t);return(<div key={raw} style={{display:"flex",gap:10,marginBottom:10,paddingBottom:10,borderBottom:`1px solid ${BORDER}`}}>
+            <div style={{minWidth:26,height:22,background:YELLOW,borderRadius:11,padding:"0 6px",display:"flex",alignItems:"center",justifyContent:"center",fontFamily:"'Poppins', sans-serif",fontWeight:700,fontSize:10,color:NAVY,flexShrink:0,boxSizing:"border-box"}}>{pos.get(t)}</div>
+            <div style={{flex:1,minWidth:0}}>
+              <div style={{display:"flex",alignItems:"flex-start",justifyContent:"space-between",gap:8}}><div style={{fontSize:11,color:YELLOW,fontWeight:600,marginBottom:2}}>{t.date||"Date unknown"}</div>{onEdit&&<button onClick={()=>onEdit(raw)} aria-label="Edit timeline entry" style={tinyBtn}>✏</button>}</div>
+              <div style={{fontSize:13,color:LIGHT,lineHeight:1.6}}><InlineText text={t.event||""}/></div>
+            </div>
+          </div>);})}
+          {g.items.length>limit&&<button style={linkBtn} onClick={()=>setShown({...shown,[g.year]:limit+25})}>Show {Math.min(25,g.items.length-limit)} more of {g.items.length-limit} →</button>}
+        </div>}
+      </div>);})}
+    </>}
+  </Panel>);
+}
+
+function EvidenceView({dossier,onEdit,onMove}){
+  const evidence=dossier.evidence||[];
+  const [q,setQ]=useState("");
+  const [type,setType]=useState("all");
+  const [sort,setSort]=useState("newest");
+  const [openIdx,setOpenIdx]=useState(null);
+  const [limit,setLimit]=useState(30);
+  const types=[...new Set(evidence.map(e=>e.type).filter(Boolean))].sort();
+  const needle=q.trim().toLowerCase();
+  let rows=evidence.map((e,ri)=>({e,ri}));
+  if(type!=="all")rows=rows.filter(r=>r.e.type===type);
+  if(needle)rows=rows.filter(r=>`${r.e.title||""} ${r.e.summary||""} ${r.e.facts_observed||""} ${r.e.significance||""} ${r.e.date||""}`.toLowerCase().includes(needle));
+  if(sort==="newest")rows=rows.slice().reverse();
+  if(sort==="date"){const d=r=>parseDateLoose(r.e.date);rows=rows.slice().sort((a,b)=>{const x=d(a),y=d(b);if(x==null&&y==null)return a.ri-b.ri;if(x==null)return 1;if(y==null)return-1;return x-y||a.ri-b.ri;});}
+  const canMove=onMove&&sort!=="date"&&!needle&&type==="all";
+  return(<Panel title={`Evidence Library — ${evidence.length} item${evidence.length!==1?"s":""}`} icon="🗂️" action={<Btn small variant="ghost" onClick={()=>downloadPdf("evidence",dossier)}>↓</Btn>}>
+    {!evidence.length?<EmptyState text="No evidence uploaded yet."/>:<>
+      <div style={{display:"flex",gap:8,flexWrap:"wrap",marginBottom:12}}>
+        <input value={q} onChange={e=>{setQ(e.target.value);setLimit(30);}} placeholder="Search evidence…" aria-label="Search evidence" style={{...smallInput,flex:1,minWidth:180}}/>
+        {types.length>1&&<select value={type} onChange={e=>{setType(e.target.value);setLimit(30);}} aria-label="Filter by type" style={smallInput}><option value="all">All types</option>{types.map(t=><option key={t} value={t}>{t}</option>)}</select>}
+        <select value={sort} onChange={e=>setSort(e.target.value)} aria-label="Sort evidence" style={smallInput}><option value="newest">Newest added first</option><option value="oldest">Oldest added first</option><option value="date">By document date</option></select>
+      </div>
+      {(needle||type!=="all")&&<p style={{margin:"0 0 10px",fontSize:12,color:"#7a96b0"}}>{rows.length} of {evidence.length} items match.</p>}
+      {rows.slice(0,limit).map(({e,ri})=>{const open=openIdx===ri;return(<div key={ri} style={{background:"#001e3d",border:`1px solid ${open?YELLOW+"60":BORDER}`,borderRadius:8,marginBottom:6}}>
+        <button onClick={()=>setOpenIdx(open?null:ri)} aria-expanded={open} style={{width:"100%",display:"flex",alignItems:"center",gap:8,background:"none",border:"none",padding:"9px 12px",cursor:"pointer",textAlign:"left",color:WHITE}}>
+          <span style={{fontFamily:"'Poppins', sans-serif",fontWeight:700,fontSize:11,color:YELLOW,flexShrink:0}}>#{String(ri+1).padStart(3,"0")}</span>
+          <span style={{flex:1,minWidth:0,fontSize:13,fontWeight:600,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:open?"normal":"nowrap"}}>{e.title||"Untitled"}</span>
+          {e.date&&<span style={{fontSize:11,color:"#a0b4c8",flexShrink:0}}>{e.date}</span>}
+          <span style={{color:YELLOW,flexShrink:0}}>{open?"▾":"▸"}</span>
+        </button>
+        {open&&<div style={{padding:"0 12px 12px"}}>
+          {e.type&&<div style={{marginBottom:6}}><Tag color="#7a96b0">{e.type}</Tag></div>}
+          {e.summary&&<p style={{margin:"0 0 6px",fontSize:12,color:LIGHT,lineHeight:1.6}}><InlineText text={e.summary}/></p>}
+          {e.facts_observed&&<p style={{margin:"0 0 4px",fontSize:11,color:"#a0b4c8",lineHeight:1.6}}><span style={{fontWeight:600,textTransform:"uppercase",fontSize:10,letterSpacing:"0.05em"}}>What this shows: </span><InlineText text={e.facts_observed}/></p>}
+          {e.significance&&<><p style={{margin:0,fontSize:11,color:YELLOW,lineHeight:1.6}}><span style={{fontWeight:600,textTransform:"uppercase",fontSize:10,letterSpacing:"0.05em"}}>Why it matters: </span><InlineText text={e.significance}/></p><AIDisclaimer compact/></>}
+          {(onEdit||canMove)&&<div style={{display:"flex",gap:6,marginTop:10}}>
+            {onEdit&&<button onClick={()=>onEdit(ri)} style={tinyBtn}>✏ Edit</button>}
+            {canMove&&<><button onClick={()=>onMove(ri,-1)} disabled={ri===0} style={{...tinyBtn,opacity:ri===0?0.3:1}}>↑ Move earlier</button><button onClick={()=>onMove(ri,1)} disabled={ri===evidence.length-1} style={{...tinyBtn,opacity:ri===evidence.length-1?0.3:1}}>↓ Move later</button></>}
+          </div>}
+        </div>}
+      </div>);})}
+      {rows.length>limit&&<button style={linkBtn} onClick={()=>setLimit(limit+30)}>Show {Math.min(30,rows.length-limit)} more of {rows.length-limit} →</button>}
+    </>}
+  </Panel>);
+}
+
+function StatementView({dossier,onEdit}){
+  const [full,setFull]=useState(false);
+  const text=toDisplayText(dossier.witness_statement);
+  const paras=splitParagraphs(text);
+  const long=paras.length>3;
+  return(<Panel title="Witness Statement" icon="📝" action={<div style={{display:"flex",gap:6}}>{onEdit&&<Btn small variant="ghost" onClick={onEdit}>✏</Btn>}<Btn small variant="ghost" onClick={()=>downloadPdf("statement",dossier)}>↓</Btn></div>}>
+    {!text?<EmptyState text="Building statement…"/>:<>
+      {long&&<p style={{margin:"0 0 10px",fontSize:12,color:"#7a96b0"}}>{paras.length} paragraphs, in date order.</p>}
+      <p style={{margin:0,fontSize:13,lineHeight:1.9,color:LIGHT,whiteSpace:"pre-wrap"}}>{(long&&!full?paras.slice(0,2):paras).join("\n\n")}</p>
+      {long&&<button style={{...linkBtn,marginTop:10}} onClick={()=>setFull(!full)}>{full?"Show less ↑":`Read the full statement (${paras.length-2} more paragraphs) →`}</button>}
+    </>}
+  </Panel>);
+}
+
+function TextPanel({title,icon,text,download,disclaimer,intro,emptyText,cleanNums}){
+  return(<Panel title={title} icon={icon} action={download?<Btn small variant="ghost" onClick={download}>↓</Btn>:null}>
+    {intro}
+    {text?<><FormattedText text={cleanNums?cleanNumbering(toDisplayText(text)):toDisplayText(text)} color={LIGHT} lineHeight={1.8}/>{disclaimer&&<AIDisclaimer/>}</>:<EmptyState text={emptyText}/>}
+  </Panel>);
+}
+
+function CaseView({dossier,readOnly,chat,onRefreshOverview,refreshingOverview,onEditWitness,onEditTimeline,onEditEvidence,onMoveEvidence}){
+  const [tab,setTab]=useState("summary");
+  const tabsRef=useRef(null);
+  const go=id=>{setTab(id);setTimeout(()=>tabsRef.current?.scrollIntoView({behavior:"smooth",block:"start"}),0);};
+  const tabs=[
+    {id:"summary",label:"Summary"},
+    {id:"timeline",label:"Timeline",count:(dossier.timeline||[]).length},
+    {id:"evidence",label:"Evidence",count:(dossier.evidence||[]).length},
+    {id:"statement",label:"Statement"},
+    dossier.burden_of_proof_letter?{id:"letters",label:"Letters"}:null,
+    chat?{id:"chat",label:"Chat"}:null,
+  ].filter(Boolean);
+  const active=tabs.some(t=>t.id===tab)?tab:"summary";
+  return(<div>
+    <CaseAtAGlance dossier={dossier} onSeeAll={()=>go("summary")} onRefreshOverview={readOnly?null:onRefreshOverview} refreshingOverview={refreshingOverview}/>
+    <div ref={tabsRef} style={{scrollMarginTop:0}}/>
+    <CaseTabs tabs={tabs} active={active} onChange={go}/>
+    {active==="summary"&&<>
+      <TextPanel title="Next Steps" icon="📌" text={dossier.next_steps} cleanNums download={()=>downloadPdf("nextsteps",dossier)} emptyText="Next steps will appear here…"/>
+      <TextPanel title="Key Questions in This Case" icon="❓" text={dossier.key_questions} cleanNums disclaimer download={()=>downloadPdf("keyquestions",dossier)} emptyText="Key questions will appear as you add evidence."/>
+      <TextPanel title="Decision-Maker Summary" icon="⚖️" text={dossier.decision_summary} disclaimer download={()=>downloadPdf("decisionsummary",dossier)} emptyText="Decision-Maker Summary will appear after you add evidence. This is the one-page view for a judge, ombudsman, or regulator."/>
+      {dossier.institution_response&&<TextPanel title="The Strongest Answer to Your Case" icon="⚔️" text={dossier.institution_response} disclaimer intro={<p style={{margin:"0 0 8px",fontSize:12,color:"#a0b4c8",lineHeight:1.6}}>Based strictly on the evidence filed so far. This identifies the strongest argument the evidence currently supports, what the evidence contradicts, and where no conclusion can yet be drawn. Check it against the actual response when it arrives.</p>}/>}
+    </>}
+    {active==="timeline"&&<TimelineView dossier={dossier} onEdit={readOnly?null:onEditTimeline}/>}
+    {active==="evidence"&&<EvidenceView dossier={dossier} onEdit={readOnly?null:onEditEvidence} onMove={readOnly?null:onMoveEvidence}/>}
+    {active==="statement"&&<StatementView dossier={dossier} onEdit={readOnly?null:onEditWitness}/>}
+    {active==="letters"&&dossier.burden_of_proof_letter&&<Panel title="Burden of Proof Challenge Letter" icon="✉️" action={<Btn small variant="ghost" onClick={()=>downloadText("Challenge_Letter.txt",dossier.burden_of_proof_letter)}>↓</Btn>}><p style={{margin:"0 0 10px",fontSize:12,color:"#a0b4c8",lineHeight:1.6}}>This letter asks the claimant to prove their case before you are required to respond. Review, adapt if needed, then send by recorded post or email with read receipt.</p><p style={{margin:0,fontSize:13,lineHeight:1.8,color:LIGHT,whiteSpace:"pre-wrap",background:"#001830",padding:12,borderRadius:8,border:"1px solid #1e3a5f"}}>{dossier.burden_of_proof_letter}</p></Panel>}
+    {active==="chat"&&chat&&<Panel title="Chat With This Case" icon="💬">{chat}</Panel>}
+  </div>);
+}
+
 function ReadOnlyDossier({dossier}){
   const [showDownload,setShowDownload]=useState(false);
   return(<div style={{fontFamily:"'Open Sans', sans-serif",background:NAVY,minHeight:"100vh",color:LIGHT}}>
     <div style={{background:NAVY,borderBottom:`3px solid ${YELLOW}`,padding:"14px 20px"}}><div style={{maxWidth:860,margin:"0 auto",display:"flex",alignItems:"center",gap:14,flexWrap:"wrap"}}><img src="/getsafe-logo.png" alt="Get SAFE" style={{width:40,height:40,objectFit:"contain"}}/><div style={{flex:1,minWidth:0}}><div style={{fontSize:9,letterSpacing:3,color:YELLOW,textTransform:"uppercase",fontFamily:"'Poppins', sans-serif"}}>Get SAFE · Goliathon Evidence Dossier</div><h1 style={{margin:0,fontFamily:"'Poppins', sans-serif",fontSize:19,fontWeight:800,color:WHITE,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{dossier.case_title||"Evidence Dossier"}</h1></div><div style={{display:"flex",gap:8,alignItems:"center"}}><Tag>Read Only</Tag><Btn small onClick={()=>setShowDownload(true)}>↓ Download</Btn></div></div></div>
     <div style={{maxWidth:860,margin:"0 auto",padding:"20px 16px"}}>
-      <Panel title="Case Overview" icon="📋">{dossier.overview?<p style={{margin:0,fontSize:14,lineHeight:1.8,color:LIGHT}}>{toDisplayText(dossier.overview)}</p>:<EmptyState text="No overview yet."/>}</Panel>
-      <Panel title="Timeline" icon="📅">{!(dossier.timeline||[]).length?<EmptyState text="No timeline yet."/>:sortTimeline(dossier.timeline||[]).map((t,i)=>(<div key={i} style={{display:"flex",gap:12,marginBottom:12,paddingBottom:12,borderBottom:i<dossier.timeline.length-1?`1px solid ${BORDER}`:"none"}}><div style={{width:26,height:26,background:YELLOW,borderRadius:"50%",display:"flex",alignItems:"center",justifyContent:"center",fontFamily:"'Poppins', sans-serif",fontWeight:700,fontSize:11,color:NAVY,flexShrink:0}}>{i+1}</div><div><div style={{fontSize:11,color:YELLOW,fontWeight:600,marginBottom:2}}>{t.date||"Date unknown"}</div><div style={{fontSize:13,color:LIGHT,lineHeight:1.6}}>{t.event}</div></div></div>))}</Panel>
-      <Panel title="Witness Statement" icon="📝">{dossier.witness_statement?<p style={{margin:0,fontSize:14,lineHeight:1.9,color:LIGHT,whiteSpace:"pre-wrap"}}>{toDisplayText(dossier.witness_statement)}</p>:<EmptyState text="No statement yet."/>}</Panel>
-      <Panel title={`Evidence Library — ${(dossier.evidence||[]).length} items`} icon="🗂️">{!(dossier.evidence||[]).length?<EmptyState text="No evidence yet."/>:(dossier.evidence||[]).map((e,i)=>(<div key={i} style={{background:"#001e3d",border:`1px solid ${BORDER}`,borderRadius:10,padding:13,marginBottom:9}}><div style={{display:"flex",alignItems:"center",gap:7,marginBottom:6,flexWrap:"wrap"}}><span style={{fontFamily:"'Poppins', sans-serif",fontWeight:700,fontSize:11,color:YELLOW}}>#{String(i+1).padStart(3,"0")}</span><span style={{fontFamily:"'Poppins', sans-serif",fontWeight:700,fontSize:13,color:WHITE,flex:1}}>{e.title}</span>{e.date&&<Tag>{e.date}</Tag>}{e.type&&<Tag color="#7a96b0">{e.type}</Tag>}</div><p style={{margin:"0 0 6px",fontSize:12,color:LIGHT,lineHeight:1.6}}>{e.summary}</p>{e.facts_observed&&<p style={{margin:"0 0 3px",fontSize:11,color:"#7a96b0"}}><span style={{fontWeight:600,textTransform:"uppercase",fontSize:10,letterSpacing:"0.05em"}}>What this shows: </span>{e.facts_observed}</p>}{e.significance&&<p style={{margin:0,fontSize:11,color:YELLOW}}><span style={{fontWeight:600,textTransform:"uppercase",fontSize:10,letterSpacing:"0.05em"}}>Why it matters: </span>{e.significance}</p>}{e.significance&&<AIDisclaimer compact/>}</div>))}</Panel>
-      <Panel title="Next Steps" icon="📌">{dossier.next_steps?<p style={{margin:0,fontSize:14,lineHeight:1.8,color:LIGHT,whiteSpace:"pre-wrap"}}>{toDisplayText(dossier.next_steps)}</p>:<EmptyState text="No next steps yet."/>}</Panel>
-      <Panel title="Key Questions in This Case" icon="❓">{dossier.key_questions?<>
-<p style={{margin:0,fontSize:14,lineHeight:1.8,color:LIGHT,whiteSpace:"pre-wrap"}}>{cleanNumbering(toDisplayText(dossier.key_questions))}</p>
-<AIDisclaimer/>
-</>:<EmptyState text="Key questions will appear as you add evidence."/>}</Panel>
-      <Panel title="Decision-Maker Summary" icon="⚖️">{dossier.decision_summary?<>
-<p style={{margin:0,fontSize:14,lineHeight:1.8,color:LIGHT,whiteSpace:"pre-wrap"}}>{toDisplayText(dossier.decision_summary)}</p>
-<AIDisclaimer/>
-</>:<EmptyState text="Decision-Maker Summary will appear after you add evidence. This is the one-page view for a judge, ombudsman, or regulator."/>}</Panel>
+      <CaseView dossier={dossier} readOnly/>
     </div>
     {showDownload&&<DownloadModal dossier={dossier} onClose={()=>setShowDownload(false)}/>}
     <style>{`@keyframes pulse{0%,100%{opacity:.3;transform:scale(.8)}50%{opacity:1;transform:scale(1)}}`}</style>
@@ -1561,55 +1759,11 @@ export default function GoliathonApp(){
 
       {!dossier&&!processing&&(<div style={{textAlign:"center",padding:"44px 20px"}}><p style={{color:"#5a7a96",fontSize:14,fontStyle:"italic",maxWidth:420,margin:"0 auto",lineHeight:1.8}}>Your evidence dossier will appear here as you upload. Each document is automatically read, analysed, and filed. Your case builds itself.</p></div>)}
 
-      {dossier&&(
-        <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit, minmax(300px, 1fr))",gap:16}}>
-          <div>
-            <Panel title="Case Overview" icon="📋" action={<div style={{display:"flex",gap:6}}><Btn small variant="ghost" disabled={refreshingOverview||!(dossier.timeline||[]).length} onClick={handleRefreshOverview}>{refreshingOverview?"Refreshing…":"⟳ Refresh"}</Btn><Btn small variant="ghost" onClick={()=>downloadPdf("overview",dossier)}>↓</Btn></div>}>{dossier.overview?<p style={{margin:0,fontSize:13,lineHeight:1.8,color:LIGHT}}>{toDisplayText(dossier.overview)}</p>:<EmptyState text="Building overview…"/>}</Panel>
-            <Panel title="Witness Statement" icon="📝" action={<div style={{display:"flex",gap:6}}><Btn small variant="ghost" onClick={()=>setEditingWitness(true)}>✏</Btn><Btn small variant="ghost" onClick={()=>downloadPdf("statement",dossier)}>↓</Btn></div>}>{dossier.witness_statement?<p style={{margin:0,fontSize:13,lineHeight:1.9,color:LIGHT,whiteSpace:"pre-wrap"}}>{toDisplayText(dossier.witness_statement)}</p>:<EmptyState text="Building statement…"/>}</Panel>
-            <Panel title="Next Steps" icon="📌" action={<Btn small variant="ghost" onClick={()=>downloadPdf("nextsteps",dossier)}>↓</Btn>}>{dossier.next_steps?<p style={{margin:0,fontSize:13,lineHeight:1.8,color:LIGHT,whiteSpace:"pre-wrap"}}>{toDisplayText(dossier.next_steps)}</p>:<EmptyState text="Next steps will appear here…"/>}</Panel>
-            <Panel title="Key Questions in This Case" icon="❓" action={<Btn small variant="ghost" onClick={()=>downloadPdf("keyquestions",dossier)}>↓</Btn>}>{dossier.key_questions?<>
-<p style={{margin:0,fontSize:13,lineHeight:1.8,color:LIGHT,whiteSpace:"pre-wrap"}}>{cleanNumbering(toDisplayText(dossier.key_questions))}</p>
-<AIDisclaimer/>
-</>:<EmptyState text="Key questions will appear as you add evidence."/>}</Panel>
-            <Panel title="Decision-Maker Summary" icon="⚖️" action={<Btn small variant="ghost" onClick={()=>downloadPdf("decisionsummary",dossier)}>↓</Btn>}>{dossier.decision_summary?<>
-<p style={{margin:0,fontSize:13,lineHeight:1.8,color:LIGHT,whiteSpace:"pre-wrap"}}>{toDisplayText(dossier.decision_summary)}</p>
-<AIDisclaimer/>
-</>:<EmptyState text="Decision-Maker Summary will appear after you add evidence. This is the one-page view for a judge, ombudsman, or regulator."/>}</Panel>
-            {dossier.institution_response&&<Panel title="The Strongest Answer to Your Case" icon="⚔️"><p style={{margin:"0 0 8px",fontSize:12,color:"#a0b4c8",lineHeight:1.6}}>Based strictly on the evidence filed so far. This identifies the strongest argument the evidence currently supports, what the evidence contradicts, and where no conclusion can yet be drawn. Check it against the actual response when it arrives.</p><p style={{margin:0,fontSize:13,lineHeight:1.8,color:LIGHT,whiteSpace:"pre-wrap"}}>{toDisplayText(dossier.institution_response)}</p><AIDisclaimer/></Panel>}
-            {dossier.burden_of_proof_letter&&<Panel title="Burden of Proof Challenge Letter" icon="✉️" action={<Btn small variant="ghost" onClick={()=>{const blob=new Blob([dossier.burden_of_proof_letter],{type:'text/plain'});const u=URL.createObjectURL(blob);const a=document.createElement('a');a.href=u;a.download='Challenge_Letter.txt';a.click();}}>↓</Btn>}><p style={{margin:"0 0 10px",fontSize:12,color:"#a0b4c8",lineHeight:1.6}}>This letter asks the claimant to prove their case before you are required to respond. Review, adapt if needed, then send by recorded post or email with read receipt.</p><p style={{margin:0,fontSize:13,lineHeight:1.8,color:LIGHT,whiteSpace:"pre-wrap",background:"#001830",padding:12,borderRadius:8,border:"1px solid #1e3a5f"}}>{dossier.burden_of_proof_letter}</p></Panel>}
-          </div>
-          <div>
-            <Panel title="Timeline" icon="📅" action={<Btn small variant="ghost" onClick={()=>downloadPdf("timeline",dossier)}>↓</Btn>}>
-              {!(dossier.timeline||[]).length?<EmptyState text="Timeline building…"/>:(dossier.timeline||[]).map((t,i)=>(<div key={i} style={{display:"flex",gap:10,marginBottom:11,paddingBottom:11,borderBottom:i<dossier.timeline.length-1?`1px solid ${BORDER}`:"none"}}><div style={{width:24,height:24,background:YELLOW,borderRadius:"50%",display:"flex",alignItems:"center",justifyContent:"center",fontFamily:"'Poppins', sans-serif",fontWeight:700,fontSize:10,color:NAVY,flexShrink:0}}>{i+1}</div><div style={{flex:1}}><div style={{display:"flex",alignItems:"flex-start",justifyContent:"space-between",gap:8}}><div style={{fontSize:11,color:YELLOW,fontWeight:600,marginBottom:2}}>{t.date||"Date unknown"}</div><button onClick={()=>setEditingTimeline(i)} style={{background:"none",border:`1px solid ${BORDER}`,borderRadius:4,padding:"2px 7px",color:YELLOW,fontSize:10,cursor:"pointer",flexShrink:0}}>✏</button></div><div style={{fontSize:13,color:LIGHT,lineHeight:1.6}}>{t.event}</div></div></div>))}
-            </Panel>
-            <Panel title={`Evidence Library — ${evidenceCount} item${evidenceCount!==1?"s":""}`} icon="🗂️" action={<Btn small variant="ghost" onClick={()=>downloadPdf("evidence",dossier)}>↓</Btn>}>
-              {!evidenceCount?<EmptyState text="No evidence uploaded yet."/>:[...(dossier.evidence||[])].reverse().map((e,i)=>{
-                const ri=evidenceCount-1-i;
-                return(<div key={i} style={{background:"#001e3d",border:`1px solid ${BORDER}`,borderRadius:10,padding:"10px 12px",marginBottom:8}}>
-                  <div style={{display:"flex",alignItems:"flex-start",gap:7,marginBottom:5}}>
-                    <span style={{fontFamily:"'Poppins', sans-serif",fontWeight:700,fontSize:11,color:YELLOW,flexShrink:0}}>#{String(ri+1).padStart(3,"0")}</span>
-                    <span style={{fontFamily:"'Poppins', sans-serif",fontWeight:700,fontSize:13,color:WHITE,flex:1}}>{e.title}</span>
-                    <div style={{display:"flex",gap:3,flexShrink:0}}>
-                      <button onClick={()=>handleMoveEvidence(ri,-1)} disabled={ri===0} style={{background:"none",border:`1px solid ${BORDER}`,borderRadius:4,padding:"2px 5px",color:"#7a96b0",fontSize:10,cursor:ri===0?"not-allowed":"pointer",opacity:ri===0?0.3:1}}>↑</button>
-                      <button onClick={()=>handleMoveEvidence(ri,1)} disabled={ri===evidenceCount-1} style={{background:"none",border:`1px solid ${BORDER}`,borderRadius:4,padding:"2px 5px",color:"#7a96b0",fontSize:10,cursor:ri===evidenceCount-1?"not-allowed":"pointer",opacity:ri===evidenceCount-1?0.3:1}}>↓</button>
-                      <button onClick={()=>setEditingEvidence(ri)} style={{background:"none",border:`1px solid ${BORDER}`,borderRadius:4,padding:"2px 7px",color:YELLOW,fontSize:10,cursor:"pointer"}}>✏</button>
-                    </div>
-                  </div>
-                  <div style={{display:"flex",gap:5,flexWrap:"wrap",marginBottom:5}}>{e.date&&<Tag>{e.date}</Tag>}{e.type&&<Tag color="#7a96b0">{e.type}</Tag>}</div>
-                  <p style={{margin:"0 0 4px",fontSize:12,color:LIGHT,lineHeight:1.6}}>{e.summary}</p>
-                  {e.facts_observed&&<p style={{margin:"0 0 3px",fontSize:11,color:"#7a96b0"}}><span style={{fontWeight:600,textTransform:"uppercase",fontSize:10,letterSpacing:"0.05em"}}>What this shows: </span>{e.facts_observed}</p>}{e.significance&&<p style={{margin:0,fontSize:11,color:YELLOW}}><span style={{fontWeight:600,textTransform:"uppercase",fontSize:10,letterSpacing:"0.05em"}}>Why it matters: </span>{e.significance}</p>}{e.significance&&<AIDisclaimer compact/>}
-                </div>);
-              })}
-            </Panel>
-            {saved&&<Panel title="Chat With This Case" icon="💬">
-              <CaseChat caseId={shareId}/>
-            </Panel>}
-            {!saved&&dossier&&<Panel title="Chat With This Case" icon="💬">
-              <p style={{margin:0,fontSize:12,color:"#7a96b0",lineHeight:1.7}}>Save this case to start chatting with it.</p>
-            </Panel>}
-          </div>
-        </div>
-      )}
+      {dossier&&<CaseView key={activeId} dossier={dossier}
+        refreshingOverview={refreshingOverview} onRefreshOverview={handleRefreshOverview}
+        onEditWitness={()=>setEditingWitness(true)} onEditTimeline={i=>setEditingTimeline(i)}
+        onEditEvidence={ri=>setEditingEvidence(ri)} onMoveEvidence={handleMoveEvidence}
+        chat={saved?<CaseChat caseId={shareId}/>:<p style={{margin:0,fontSize:12,color:"#7a96b0",lineHeight:1.7}}>Save this case to start chatting with it.</p>}/>}
     </div>
 
     <div style={{borderTop:`1px solid ${BORDER}`,padding:"14px 20px",textAlign:"center",marginTop:20}}>

@@ -1,69 +1,11 @@
 import { useState, useRef, useEffect } from "react";
 import { aiHeaders, notifyAiError } from "../lib/userKey";
+import FormattedText from "./FormattedText";
 
 const NAVY = "#00274d", YELLOW = "#ffc72c", WHITE = "#ffffff", PANEL = "#002a57", BORDER = "#003a6e", LIGHT = "#e8eef4";
 
-// Lightweight markdown renderer for chat replies — handles headers, bold,
-// and bullet lists, which is what Claude's responses typically use. Not a
-// full markdown parser; the rest of the app has none, so this stays minimal
-// rather than pulling in a new dependency for one component.
-function renderInline(text) {
-  const parts = text.split(/(\*\*[^*]+\*\*)/g);
-  return parts.map((part, i) =>
-    part.startsWith("**") && part.endsWith("**") ? (
-      <strong key={i}>{part.slice(2, -2)}</strong>
-    ) : (
-      part
-    )
-  );
-}
-
-function MarkdownText({ text, color }) {
-  const lines = text.split("\n");
-  const blocks = [];
-  let listBuffer = [];
-
-  function flushList(key) {
-    if (listBuffer.length) {
-      blocks.push(
-        <ul key={`ul-${key}`} style={{ margin: "4px 0 8px", paddingLeft: 18 }}>
-          {listBuffer.map((item, i) => (
-            <li key={i} style={{ marginBottom: 3 }}>{renderInline(item)}</li>
-          ))}
-        </ul>
-      );
-      listBuffer = [];
-    }
-  }
-
-  lines.forEach((line, i) => {
-    const heading = line.match(/^(#{1,3})\s+(.*)/);
-    const bullet = line.match(/^[-*]\s+(.*)/);
-
-    if (heading) {
-      flushList(i);
-      const size = heading[1].length === 1 ? 15 : heading[1].length === 2 ? 14 : 13;
-      blocks.push(
-        <div key={i} style={{ fontFamily: "'Poppins', sans-serif", fontWeight: 700, fontSize: size, color: YELLOW, margin: "10px 0 4px" }}>
-          {renderInline(heading[2])}
-        </div>
-      );
-    } else if (bullet) {
-      listBuffer.push(bullet[1]);
-    } else if (line.trim() === "---") {
-      flushList(i);
-      blocks.push(<div key={i} style={{ borderTop: `1px solid ${BORDER}`, margin: "8px 0" }} />);
-    } else if (line.trim() === "") {
-      flushList(i);
-    } else {
-      flushList(i);
-      blocks.push(<p key={i} style={{ margin: "0 0 6px" }}>{renderInline(line)}</p>);
-    }
-  });
-  flushList("end");
-
-  return <div style={{ color, fontSize: 13, lineHeight: 1.6 }}>{blocks}</div>;
-}
+// Replies are shown through the shared FormattedText component, which
+// renders lists, bold and tables properly and strips any other markdown.
 
 // Chat-with-case panel. Renders inline within the dossier view (as a Panel
 // child) once a case has been saved. Streams responses from /api/case-chat,
@@ -306,7 +248,7 @@ export default function CaseChat({ caseId }) {
               }}
             >
               {m.role === "assistant" && m.content ? (
-                <MarkdownText text={m.content} color={LIGHT} />
+                <FormattedText text={m.content} color={LIGHT} />
               ) : (
                 m.content || (isStreaming && i === messages.length - 1 ? "…" : "")
               )}

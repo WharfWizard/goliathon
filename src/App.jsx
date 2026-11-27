@@ -50,7 +50,7 @@ function buildExistingCaseContext(dossier){
   // Shorten each entry as the timeline grows, so every entry still fits.
   const perEntry=Math.max(60,Math.min(220,Math.floor(15500/Math.max(1,tl.length))-20));
   const tlText=tl.map(t=>"["+(t.date||"undated")+"] "+cut(t.event,perEntry)).join("\n");
-  const evText=ev.map((e,i)=>"#"+String(i+1).padStart(3,"0")+" "+(e.title||"Untitled")+" ("+(e.date||"undated")+")").join("\n");
+  const evText=ev.map((e,i)=>"#"+String(i+1).padStart(3,"0")+" "+(e.title||"Untitled")+" ("+(e.date||"undated")+")"+((e.attachments||[]).length?" with "+e.attachments.length+" attachment"+(e.attachments.length!==1?"s":""):"")).join("\n");
   return "\n\nExisting case:\nTitle: "+(dossier.case_title||"Unknown")+
     "\nOverview: "+cut(dossier.overview,2500)+
     "\nTimeline ("+tl.length+" entries, all shown):\n"+cut(tlText,16000)+
@@ -227,6 +227,94 @@ function compressImage(file){
     };reader.readAsDataURL(file);
   });
 }
+// ── EVIDENCE BUNDLES ─────────────────────────────────────────────────────────
+// An email or letter and its attachments are filed as ONE evidence item with
+// ONE timeline entry (attachments shown as #045a, #045b…). Two stages:
+//   1. each attachment is read on its own short call (no case context), which
+//      keeps every request under Vercel's 4.5MB body limit;
+//   2. one analysis reads the covering message with those attachment
+//      summaries, using the normal evidence prompt.
+// Cost is about the same as filing them separately: each document is still
+// sent to the AI once, but the case context is sent once instead of N times.
+const BUNDLE_IMAGE_EXTS=["jpg","jpeg","png","gif","webp"];
+const BUNDLE_TEXT_EXTS=["html","htm","doc","docx","msg"];
+const BUNDLE_ACCEPT="image/*,.pdf,.txt,.html,.htm,.doc,.docx,.msg";
+const BUNDLE_LETTERS="abcdefghijklmnopqrstuvwxyz";
+function attachmentLabel(itemNumber,k){return "#"+String(itemNumber).padStart(3,"0")+(BUNDLE_LETTERS[k]||("-"+(k+1)));}
+function extOf(name){const n=String(name||"");return n.includes(".")?n.split(".").pop().toLowerCase():"";}
+function base64ToFile(b64,name){
+  const bin=atob(b64);const bytes=new Uint8Array(bin.length);
+  for(let i=0;i<bin.length;i++)bytes[i]=bin.charCodeAt(i);
+  const ext=extOf(name);
+  const mime=ext==="pdf"?"application/pdf":BUNDLE_IMAGE_EXTS.includes(ext)?"image/"+(ext==="jpg"?"jpeg":ext):ext==="txt"?"text/plain":"application/octet-stream";
+  return new File([bytes],name,{type:mime});
+}
+const ATTACHMENT_PROMPT=`This file is an attachment to a message that is being filed as evidence in a case. Read it and return ONLY valid JSON, with no text before or after it:
+{"title":"short descriptive title, naming the sender and document type where shown","date":"DD Mon YYYY or null","type":"Letter/Email/Statement/Report/Photo/Form/Invoice/Other","summary":"2-3 factual sentences, at most 80 words, saying what this attachment is and what it says","facts_observed":"only what is directly stated or shown, at most 150 words: names, dates, amounts and reference numbers exactly as written. No interpretation."}`;
+
+// Reads one attachment. A FILE problem (unsupported, too large, can't be
+// converted or uploaded) comes back marked not_read, so the rest of the
+// bundle is still filed. An AI problem (refused, out of allowance, busy)
+// is thrown, so the whole bundle stops at once with a clear message
+// instead of quietly marking every attachment "not read".
+async function describeAttachment(file,shareId){
+  const name=file.name||"attachment",ext=extOf(name),MB=1024*1024;
+  const notRead=reason=>({filename:name,title:name,summary:"Not read: "+reason,not_read:true});
+  const ai=async fn=>{try{return await fn();}catch(e){e.aiError=true;throw e;}};
+  try{
+    let content;
+    if(BUNDLE_IMAGE_EXTS.includes(ext)){
+      const data=await compressImage(file);
+      content=[{type:"image",source:{type:"base64",media_type:"image/jpeg",data}},{type:"text",text:`Attachment filename: ${name}\n\n${ATTACHMENT_PROMPT}`}];
+    }else if(ext==="pdf"){
+      if(file.size>20*MB)return notRead("larger than 20MB. Please upload it separately in smaller parts.");
+      if(file.size>2.5*MB){
+        const storagePath=`${shareId}/${Date.now()}_${name}`;
+        const {error:uploadError}=await supabaseBrowser.storage.from('evidence-uploads').upload(storagePath,file,{contentType:'application/pdf'});
+        if(uploadError)throw new Error('Upload failed: '+uploadError.message);
+        return finishAttachment(name,await ai(async()=>{
+          const res=await fetch("/api/process-large-file",{method:"POST",headers:aiHeaders({"Content-Type":"application/json"}),body:JSON.stringify({storagePath,mediaType:'application/pdf',promptText:`Attachment filename: ${name}\n\n${ATTACHMENT_PROMPT}`})});
+          const data=await res.json();
+          if(data.error){notifyAiError(data);throw new Error(data.error);}
+          return data.content?.[0]?.text||"";
+        }));
+      }
+      content=[{type:"document",source:{type:"base64",media_type:"application/pdf",data:await fileToBase64(file)}},{type:"text",text:`Attachment filename: ${name}\n\n${ATTACHMENT_PROMPT}`}];
+    }else if(ext==="txt"){
+      content=`Attachment filename: ${name}\n\nContent:\n${(await file.text()).slice(0,60000)}\n\n${ATTACHMENT_PROMPT}`;
+    }else if(BUNDLE_TEXT_EXTS.includes(ext)){
+      if(file.size>2.5*MB)return notRead("larger than 2.5MB. Please upload it separately.");
+      const res=await fetch("/api/convert",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({filename:name,mediaType:file.type,data:await fileToBase64(file)})});
+      const data=await res.json();
+      if(data.error)throw new Error(data.error);
+      content=`Attachment filename: ${name}\n\nContent:\n${String(data.text||"").slice(0,60000)}\n\n${ATTACHMENT_PROMPT}`;
+    }else{
+      return notRead("this file type is not supported.");
+    }
+    return finishAttachment(name,await ai(()=>callClaude([{role:"user",content}])));
+  }catch(e){if(e.aiError)throw e;return notRead(e.message||"something went wrong.");}
+}
+function finishAttachment(name,responseText){
+  const p=extractJson(responseText)||{};
+  const date=p.date&&String(p.date).toLowerCase()!=="null"?String(p.date):null;
+  return {filename:name,title:toDisplayText(p.title)||name,date,type:toDisplayText(p.type),summary:toDisplayText(p.summary),facts_observed:toDisplayText(p.facts_observed)};
+}
+// The text the main analysis reads in place of the attachments themselves.
+function bundleMessageText({text,title,date,attachments}){
+  const list=attachments.map((a,k)=>`[${BUNDLE_LETTERS[k]||k+1}] ${a.filename}${a.not_read?"":` — ${a.title} (${a.date||"undated"}${a.type?", "+a.type:""})`}\nSummary: ${a.summary||""}${a.facts_observed?`\nWhat it shows: ${a.facts_observed}`:""}`).join("\n\n");
+  return `Analyse this evidence. It is ONE item: a message with ${attachments.length} attachment${attachments.length!==1?"s":""}, filed together.
+Title given: ${title||"not given"}
+Date given: ${date||"not given"}
+
+MESSAGE TEXT:
+${String(text||"").trim()||"(No covering text was provided.)"}
+
+ATTACHMENTS (each was read separately; summaries below):
+${list}
+
+BUNDLE RULES: The evidence_item describes the message and its attachments together, and its title names the message (for example "Email from the Board with 3 attachments"). Give ONE timeline_entry, for the message; mention an attachment in it only if the attachment is the substance of the event. Where an attachment was not read, do not guess its contents.`;
+}
+
 function downloadText(filename,content){const blob=new Blob([content],{type:"text/plain"});const url=URL.createObjectURL(blob);const a=document.createElement("a");a.href=url;a.download=filename;a.click();URL.revokeObjectURL(url);}
 
 // Safely coerces any value into displayable text. AI responses for these
@@ -377,6 +465,13 @@ function checkNewPage(doc,y,needed,logoB64,caseTitle,sectionTitle,pageNums){
   return y;
 }
 
+// PDF: lists a bundle's attachments under the item's "What this shows".
+function withAttachmentNotes(e,itemNumber){
+  const att=e.attachments||[];
+  if(!att.length)return e.facts_observed;
+  const lines=att.map((a,k)=>`${attachmentLabel(itemNumber,k)} ${a.title||a.filename}${a.date?" ("+a.date+")":""}: ${a.summary||""}`);
+  return [e.facts_observed,`Attachments (${att.length}): `+lines.join(" ")].filter(Boolean).join(" ");
+}
 async function downloadPdf(sectionKey,dossier){
   if(!window.jspdf){alert("PDF library not loaded yet. Please wait a moment and try again.");return;}
   const logoB64=await loadLogoBase64();
@@ -390,7 +485,7 @@ async function downloadPdf(sectionKey,dossier){
     overview:{title:"Case Overview",data:()=>[{type:"body",text:dossier.overview||"No overview available."}]},
     timeline:{title:"Chronological Timeline",data:()=>sortTimeline(dossier.timeline||[]).map((t,i)=>({type:"timeline",num:i+1,date:t.date||"Date unknown",event:t.event,evidence:t.evidence}))},
     statement:{title:"Witness Statement",data:()=>[{type:"body",text:dossier.witness_statement||"No statement available."}]},
-    evidence:{title:`Evidence Library — ${(dossier.evidence||[]).length} ${(dossier.evidence||[]).length===1?"Item":"Items"}`,data:()=>(dossier.evidence||[]).map((e,i)=>({type:"evidence",num:i+1,title:e.title,date:e.date,docType:e.type,summary:e.summary,factsObserved:e.facts_observed,significance:e.significance,redFlags:e.red_flags}))},
+    evidence:{title:`Evidence Library — ${(dossier.evidence||[]).length} ${(dossier.evidence||[]).length===1?"Item":"Items"}`,data:()=>(dossier.evidence||[]).map((e,i)=>({type:"evidence",num:i+1,title:e.title,date:e.date,docType:e.type,summary:e.summary,factsObserved:withAttachmentNotes(e,i+1),significance:e.significance,redFlags:e.red_flags}))},
     nextsteps:{title:"Next Steps",data:()=>[{type:"body",text:dossier.next_steps||"No next steps available."}]},
     institutionresponse:{title:"The Strongest Answer to Your Case",data:()=>[{type:"body",text:(dossier.institution_response?"Based strictly on the evidence filed so far:\n\n"+dossier.institution_response:"Not yet generated.")+"\n\n"+AI_DISCLAIMER_PDF_TEXT}]},
     keyquestions:{title:"Key Questions in This Case",data:()=>[{type:"body",text:(dossier.key_questions||"No key questions identified yet.")+"\n\n"+AI_DISCLAIMER_PDF_TEXT}]},
@@ -404,7 +499,7 @@ async function downloadPdf(sectionKey,dossier){
       items.push({type:"sectionHeader",title:"Witness Statement"});
       items.push({type:"body",text:dossier.witness_statement?"DRAFT - generated by Goliathon from your documents, not a statement you have made. Check that every sentence is accurate, and put it in your own words, before using it anywhere.\n\n"+dossier.witness_statement:""});
       items.push({type:"sectionHeader",title:`Evidence Library — ${(dossier.evidence||[]).length} ${(dossier.evidence||[]).length===1?"Item":"Items"}`});
-      (dossier.evidence||[]).forEach((e,i)=>items.push({type:"evidence",num:i+1,title:e.title,date:e.date,docType:e.type,summary:e.summary,factsObserved:e.facts_observed,significance:e.significance,redFlags:e.red_flags}));
+      (dossier.evidence||[]).forEach((e,i)=>items.push({type:"evidence",num:i+1,title:e.title,date:e.date,docType:e.type,summary:e.summary,factsObserved:withAttachmentNotes(e,i+1),significance:e.significance,redFlags:e.red_flags}));
       items.push({type:"sectionHeader",title:"Next Steps"});
       items.push({type:"body",text:dossier.next_steps||""});
       if(dossier.decision_summary){items.push({type:"sectionHeader",title:"Decision-Maker Summary"});items.push({type:"body",text:dossier.decision_summary+"\n\n"+AI_DISCLAIMER_PDF_TEXT});}if(dossier.institution_response){items.push({type:"sectionHeader",title:"The Strongest Answer to Your Case"});items.push({type:"body",text:"Based strictly on the evidence filed so far:\n\n"+dossier.institution_response+"\n\n"+AI_DISCLAIMER_PDF_TEXT});}
@@ -1053,7 +1148,7 @@ function EvidenceView({dossier,onEdit,onMove}){
   const needle=q.trim().toLowerCase();
   let rows=evidence.map((e,ri)=>({e,ri}));
   if(type!=="all")rows=rows.filter(r=>r.e.type===type);
-  if(needle)rows=rows.filter(r=>`${r.e.title||""} ${r.e.summary||""} ${r.e.facts_observed||""} ${r.e.significance||""} ${r.e.date||""}`.toLowerCase().includes(needle));
+  if(needle)rows=rows.filter(r=>`${r.e.title||""} ${r.e.summary||""} ${r.e.facts_observed||""} ${r.e.significance||""} ${r.e.date||""} ${(r.e.attachments||[]).map(a=>`${a.filename} ${a.title||""} ${a.summary||""} ${a.facts_observed||""}`).join(" ")}`.toLowerCase().includes(needle));
   if(sort==="newest")rows=rows.slice().reverse();
   if(sort==="date"){const d=r=>parseDateLoose(r.e.date);rows=rows.slice().sort((a,b)=>{const x=d(a),y=d(b);if(x==null&&y==null)return a.ri-b.ri;if(x==null)return 1;if(y==null)return-1;return x-y||a.ri-b.ri;});}
   const canMove=onMove&&sort!=="date"&&!needle&&type==="all";
@@ -1069,6 +1164,7 @@ function EvidenceView({dossier,onEdit,onMove}){
         <button onClick={()=>setOpenIdx(open?null:ri)} aria-expanded={open} style={{width:"100%",display:"flex",alignItems:"center",gap:8,background:"none",border:"none",padding:"9px 12px",cursor:"pointer",textAlign:"left",color:WHITE}}>
           <span style={{fontFamily:"'Poppins', sans-serif",fontWeight:700,fontSize:11,color:YELLOW,flexShrink:0}}>#{String(ri+1).padStart(3,"0")}</span>
           <span style={{flex:1,minWidth:0,fontSize:13,fontWeight:600,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:open?"normal":"nowrap"}}>{e.title||"Untitled"}</span>
+          {(e.attachments||[]).length>0&&<span title={`${e.attachments.length} attachment${e.attachments.length!==1?"s":""}`} style={{fontSize:11,color:"#a0b4c8",flexShrink:0}}>📎 {e.attachments.length}</span>}
           {e.date&&<span style={{fontSize:11,color:"#a0b4c8",flexShrink:0}}>{e.date}</span>}
           <span style={{color:YELLOW,flexShrink:0}}>{open?"▾":"▸"}</span>
         </button>
@@ -1077,6 +1173,15 @@ function EvidenceView({dossier,onEdit,onMove}){
           {e.summary&&<p style={{margin:"0 0 6px",fontSize:12,color:LIGHT,lineHeight:1.6}}><InlineText text={e.summary}/></p>}
           {e.facts_observed&&<p style={{margin:"0 0 4px",fontSize:11,color:"#a0b4c8",lineHeight:1.6}}><span style={{fontWeight:600,textTransform:"uppercase",fontSize:10,letterSpacing:"0.05em"}}>What this shows: </span><InlineText text={e.facts_observed}/></p>}
           {e.significance&&<><p style={{margin:0,fontSize:11,color:YELLOW,lineHeight:1.6}}><span style={{fontWeight:600,textTransform:"uppercase",fontSize:10,letterSpacing:"0.05em"}}>Why it matters: </span><InlineText text={e.significance}/></p><AIDisclaimer compact/></>}
+          {(e.attachments||[]).length>0&&<div style={{marginTop:10,borderTop:`1px solid ${BORDER}`,paddingTop:8}}>
+            <div style={{fontSize:10,fontWeight:600,textTransform:"uppercase",letterSpacing:"0.05em",color:"#a0b4c8",marginBottom:6}}>Attachments ({e.attachments.length})</div>
+            {e.attachments.map((a,k)=>(<div key={k} style={{marginBottom:8,paddingLeft:10,borderLeft:`2px solid ${a.not_read?"#e5737360":YELLOW+"60"}`}}>
+              <div style={{fontSize:12,color:WHITE,fontWeight:600}}><span style={{color:YELLOW,marginRight:6}}>{attachmentLabel(ri+1,k)}</span>{a.title||a.filename}{a.date&&<span style={{color:"#a0b4c8",fontWeight:400}}> · {a.date}</span>}</div>
+              {a.title&&a.title!==a.filename&&<div style={{fontSize:10,color:"#7a96b0"}}>{a.filename}</div>}
+              {a.summary&&<div style={{fontSize:11,color:a.not_read?"#e57373":LIGHT,lineHeight:1.6,marginTop:2}}><InlineText text={a.summary}/></div>}
+              {a.facts_observed&&<div style={{fontSize:11,color:"#a0b4c8",lineHeight:1.6,marginTop:2}}><span style={{fontWeight:600,textTransform:"uppercase",fontSize:10,letterSpacing:"0.05em"}}>What this shows: </span><InlineText text={a.facts_observed}/></div>}
+            </div>))}
+          </div>}
           {(onEdit||canMove)&&<div style={{display:"flex",gap:6,marginTop:10}}>
             {onEdit&&<button onClick={()=>onEdit(ri)} style={tinyBtn}>✏ Edit</button>}
             {canMove&&<><button onClick={()=>onMove(ri,-1)} disabled={ri===0} style={{...tinyBtn,opacity:ri===0?0.3:1}}>↑ Move earlier</button><button onClick={()=>onMove(ri,1)} disabled={ri===evidence.length-1} style={{...tinyBtn,opacity:ri===evidence.length-1?0.3:1}}>↓ Move later</button></>}
@@ -1200,6 +1305,8 @@ export default function GoliathonApp(){
   const [pasteTextContent,setPasteTextContent]=useState("");
   const [pasteTextDate,setPasteTextDate]=useState("");
   const [pasteTextTitle,setPasteTextTitle]=useState("");
+  const [pasteFiles,setPasteFiles]=useState([]);
+  const pasteFilesRef=useRef(null);
   const [dragOver,setDragOver]=useState(false);
   const [showShare,setShowShare]=useState(false);
   const [showDownload,setShowDownload]=useState(false);
@@ -1453,14 +1560,31 @@ export default function GoliathonApp(){
   },[threatForm,threatFile,activeId]);
 
 
-  const handlePasteText=useCallback(async()=>{
-    if(!pasteTextContent.trim())return;
-    const datePrefix=pasteTextDate?pasteTextDate+"_":"";
-    const titlePart=pasteTextTitle.trim()||"File Note";
-    const filename=datePrefix+titlePart;
-    setShowPasteText(false);setPasteTextContent("");setPasteTextDate("");setPasteTextTitle("");
-    await processEvidence(pasteTextContent.trim(),filename,"text/plain");
-  },[pasteTextContent,pasteTextDate,pasteTextTitle]);
+
+  // Files a message and its attachments as ONE evidence item (see
+  // EVIDENCE BUNDLES above). `skipped` names attachments that could not be
+  // included, so they still appear in the record as not read.
+  const processBundle=useCallback(async({text,title,date,files,skipped=[]})=>{
+    setProcessing(true);
+    try{
+      const attachments=[];
+      for(let k=0;k<files.length;k++){
+        setProcessingMsg(`Reading attachment ${k+1} of ${files.length}: ${files[k].name}…`);
+        attachments.push(await describeAttachment(files[k],shareId));
+      }
+      skipped.forEach(sk=>{const name=typeof sk==="string"?sk:sk.filename;const reason=typeof sk==="string"?"it could not be included with this email.":sk.reason;attachments.push({filename:name,title:name,summary:"Not read: "+reason,not_read:true});});
+      setProcessingMsg("Analysing the message and its attachments together…");
+      const response=await callClaude([{role:"user",content:bundleMessageText({text,title,date,attachments})+buildEvidencePrompt(dossier)}]);
+      const parsed=extractJson(response);
+      if(!parsed||!parsed.evidence_item)throw new Error("The analysis came back incomplete. Please try again.");
+      parsed.evidence_item={...parsed.evidence_item,attachments};
+      const current=dossier||{evidence:[],timeline:[],witness_statement:"",overview:"",next_steps:""};
+      setProcessingMsg("Updating case overview…");
+      const newDossier=await withWholeCaseOverview(mergeParsedIntoDossier(current,parsed));
+      await updateDossier(newDossier);
+    }catch(e){alert("Nothing was filed: something went wrong reading this email and its attachments. Please try again.\n\n"+e.message+(/not allowed/i.test(e.message||"")?"\n\n(\"Not allowed\" means this web address is not permitted to use Goliathon's AI.)":""));}
+    setProcessing(false);setProcessingMsg("");
+  },[dossier,updateDossier,shareId]);
 
   const processEvidence=useCallback(async(content,filename,mediaType,isUrl=false)=>{
     setProcessing(true);setProcessingMsg(`Reading ${filename}…`);
@@ -1539,7 +1663,7 @@ export default function GoliathonApp(){
     }
     if(needsConversion){
       setProcessing(true);setProcessingMsg(`Converting ${file.name}…`);
-      try{const base64=await fileToBase64(file);const res=await fetch("/api/convert",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({filename:file.name,mediaType:file.type,data:base64})});const data=await res.json();if(data.error)throw new Error(data.error);await processEvidence(data.text,file.name,"text/plain");}
+      try{const base64=await fileToBase64(file);const res=await fetch("/api/convert",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({filename:file.name,mediaType:file.type,data:base64})});const data=await res.json();if(data.error)throw new Error(data.error);if(ext==="msg"&&((data.attachments||[]).length||(data.skipped||[]).length)){setProcessing(false);await processBundle({text:data.text,title:file.name.replace(/\.msg$/i,""),date:"",files:(data.attachments||[]).map(a=>base64ToFile(a.data,a.filename)),skipped:data.skipped||[]});}else{await processEvidence(data.text,file.name,"text/plain");}}
       catch(e){alert("Could not convert this file: "+e.message);setProcessing(false);setProcessingMsg("");}
       return;
     }
@@ -1558,7 +1682,19 @@ export default function GoliathonApp(){
     } else {
       const base64=await fileToBase64(file);await processEvidence(base64,file.name,file.type);
     }
-  },[processEvidence,processLargeFile]);
+  },[processEvidence,processLargeFile,processBundle]);
+
+  const handlePasteText=useCallback(async()=>{
+    const files=pasteFiles;
+    if(!pasteTextContent.trim()&&!files.length)return;
+    const datePrefix=pasteTextDate?pasteTextDate+"_":"";
+    const titlePart=pasteTextTitle.trim()||(files.length?"Email with attachments":"File Note");
+    const filename=datePrefix+titlePart;
+    const text=pasteTextContent.trim();
+    setShowPasteText(false);setPasteTextContent("");setPasteTextDate("");setPasteTextTitle("");setPasteFiles([]);
+    if(files.length)await processBundle({text,title:titlePart,date:pasteTextDate,files});
+    else await processEvidence(text,filename,"text/plain");
+  },[pasteTextContent,pasteTextDate,pasteTextTitle,pasteFiles,processEvidence,processBundle]);
 
   const handleUrl=useCallback(async()=>{
     if(!urlInput.trim())return;setShowUrl(false);setProcessing(true);setProcessingMsg("Fetching URL…");
@@ -1658,7 +1794,7 @@ export default function GoliathonApp(){
               <label onClick={e=>e.stopPropagation()} style={{cursor:"pointer",background:YELLOW,color:NAVY,borderRadius:8,fontFamily:"'Poppins',sans-serif",fontWeight:700,fontSize:12,padding:"7px 16px",display:"inline-flex",alignItems:"center",gap:6,whiteSpace:"nowrap",letterSpacing:0.5}}>📎 Upload File<input type="file" accept="image/*,.pdf,.txt,.html,.htm,.doc,.docx,.msg" style={{display:"none"}} onChange={e=>{if(e.target.files[0])handleFile(e.target.files[0]);}}/></label>
               <Btn small variant="subtle" onClick={e=>{e.stopPropagation();setShowCamera(true);setCameraPages([]);}}>📷 Camera Scan</Btn>
               <Btn small variant="subtle" onClick={e=>{e.stopPropagation();setShowUrl(true);}}>🔗 Add URL</Btn>
-              <Btn small variant="subtle" onClick={e=>{e.stopPropagation();setShowPasteText(true);}}>📝 Paste Text</Btn>
+              <Btn small variant="subtle" onClick={e=>{e.stopPropagation();setShowPasteText(true);}}>📝 Paste Email / Text</Btn>
             </div>
             <p style={{margin:"10px 0 0",fontSize:11,color:"#5a7a96"}}>Accepts JPG, PNG, PDF, TXT, HTML, DOC, DOCX, MSG — or drag and drop a file here</p>
           </div>
@@ -1725,8 +1861,8 @@ export default function GoliathonApp(){
       {showPasteText&&(
         <div style={{position:"fixed",inset:0,background:"rgba(0,20,40,0.85)",zIndex:200,display:"flex",alignItems:"center",justifyContent:"center",padding:20}} onClick={()=>setShowPasteText(false)}>
           <div style={{background:"#0d2137",border:"1px solid #1e3a5f",borderRadius:16,padding:24,width:"100%",maxWidth:560}} onClick={e=>e.stopPropagation()}>
-            <h3 style={{margin:"0 0 16px",color:"#ffc72c",fontFamily:"'Poppins',sans-serif",fontSize:16}}>📝 Paste Text Entry</h3>
-            <p style={{margin:"0 0 14px",fontSize:12,color:"#7a96b0",lineHeight:1.6}}>Paste a file note, letter, email, or any written record. Give it a date and title so it appears correctly in your evidence register.</p>
+            <h3 style={{margin:"0 0 16px",color:"#ffc72c",fontFamily:"'Poppins',sans-serif",fontSize:16}}>📝 Paste text or an email</h3>
+            <p style={{margin:"0 0 14px",fontSize:12,color:"#7a96b0",lineHeight:1.6}}>Paste a file note, letter, email, or any written record. Give it a date and title so it appears correctly in your evidence register. If it is an email with attachments, attach them below: the email and its attachments are filed together as one item.</p>
             <div style={{display:"flex",gap:10,marginBottom:10}}>
               <div style={{flex:1}}>
                 <label style={{display:"block",fontSize:11,color:"#7a96b0",marginBottom:4,textTransform:"uppercase",letterSpacing:"0.05em"}}>Date (e.g. 2026_06_03)</label>
@@ -1737,10 +1873,24 @@ export default function GoliathonApp(){
                 <input value={pasteTextTitle} onChange={e=>setPasteTextTitle(e.target.value)} placeholder="e.g. File Note: mortgage discharge" style={{width:"100%",boxSizing:"border-box",background:"#0a1929",border:"1px solid #1e3a5f",borderRadius:8,padding:"8px 10px",color:"#c8dae6",fontSize:13}}/>
               </div>
             </div>
-            <textarea value={pasteTextContent} onChange={e=>setPasteTextContent(e.target.value)} placeholder="Paste or type your text here…" rows={10} style={{width:"100%",boxSizing:"border-box",background:"#0a1929",border:"1px solid #1e3a5f",borderRadius:8,padding:"10px",color:"#c8dae6",fontSize:13,lineHeight:1.7,resize:"vertical",fontFamily:"inherit",marginBottom:14}}/>
+            <textarea value={pasteTextContent} onChange={e=>setPasteTextContent(e.target.value)} placeholder="Paste or type your text here…" rows={10} style={{width:"100%",boxSizing:"border-box",background:"#0a1929",border:"1px solid #1e3a5f",borderRadius:8,padding:"10px",color:"#c8dae6",fontSize:13,lineHeight:1.7,resize:"vertical",fontFamily:"inherit",marginBottom:10}}/>
+            <div style={{border:"1px dashed #1e3a5f",borderRadius:8,padding:"10px 12px",marginBottom:14}}>
+              <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:8}}>
+                <span style={{fontSize:12,color:"#a0b4c8"}}>{pasteFiles.length?`${pasteFiles.length} attachment${pasteFiles.length!==1?"s":""}, filed with this text as one item`:"Attachments (optional)"}</span>
+                <Btn small variant="ghost" onClick={()=>pasteFilesRef.current?.click()}>📎 Attach files</Btn>
+              </div>
+              <input ref={pasteFilesRef} type="file" multiple accept={BUNDLE_ACCEPT} style={{display:"none"}} onChange={e=>{const add=Array.from(e.target.files||[]);setPasteFiles(prev=>[...prev,...add].slice(0,10));e.target.value="";}}/>
+              {pasteFiles.map((f,k)=>(<div key={k} style={{display:"flex",alignItems:"center",gap:8,marginTop:8,fontSize:12,color:"#c8dae6"}}>
+                <span style={{color:YELLOW,fontWeight:700,minWidth:16}}>{BUNDLE_LETTERS[k]}</span>
+                <span style={{flex:1,minWidth:0,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{f.name}</span>
+                <span style={{color:"#7a96b0",flexShrink:0}}>{f.size<1024*1024?Math.max(1,Math.round(f.size/1024))+"KB":(f.size/1024/1024).toFixed(1)+"MB"}</span>
+                <button onClick={()=>setPasteFiles(prev=>prev.filter((_,j)=>j!==k))} aria-label={`Remove ${f.name}`} style={{background:"none",border:"1px solid #1e3a5f",borderRadius:4,color:"#e57373",fontSize:11,cursor:"pointer",padding:"1px 6px"}}>✕</button>
+              </div>))}
+              {pasteFiles.length>=10&&<p style={{margin:"8px 0 0",fontSize:11,color:"#7a96b0"}}>Up to 10 attachments per item.</p>}
+            </div>
             <div style={{display:"flex",gap:8,justifyContent:"flex-end"}}>
-              <Btn small variant="subtle" onClick={()=>setShowPasteText(false)}>Cancel</Btn>
-              <Btn small onClick={handlePasteText} disabled={!pasteTextContent.trim()}>Analyse Entry</Btn>
+              <Btn small variant="subtle" onClick={()=>{setShowPasteText(false);setPasteFiles([]);}}>Cancel</Btn>
+              <Btn small onClick={handlePasteText} disabled={!pasteTextContent.trim()&&!pasteFiles.length}>{pasteFiles.length?"Analyse as one item":"Analyse Entry"}</Btn>
             </div>
           </div>
         </div>

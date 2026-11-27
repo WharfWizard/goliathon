@@ -252,11 +252,15 @@ function base64ToFile(b64,name){
 const ATTACHMENT_PROMPT=`This file is an attachment to a message that is being filed as evidence in a case. Read it and return ONLY valid JSON, with no text before or after it:
 {"title":"short descriptive title, naming the sender and document type where shown","date":"DD Mon YYYY or null","type":"Letter/Email/Statement/Report/Photo/Form/Invoice/Other","summary":"2-3 factual sentences, at most 80 words, saying what this attachment is and what it says","facts_observed":"only what is directly stated or shown, at most 150 words: names, dates, amounts and reference numbers exactly as written. No interpretation."}`;
 
-// Reads one attachment. Never throws: a file that can't be read comes back
-// marked not_read, so the rest of the bundle is still filed.
+// Reads one attachment. A FILE problem (unsupported, too large, can't be
+// converted or uploaded) comes back marked not_read, so the rest of the
+// bundle is still filed. An AI problem (refused, out of allowance, busy)
+// is thrown, so the whole bundle stops at once with a clear message
+// instead of quietly marking every attachment "not read".
 async function describeAttachment(file,shareId){
   const name=file.name||"attachment",ext=extOf(name),MB=1024*1024;
   const notRead=reason=>({filename:name,title:name,summary:"Not read: "+reason,not_read:true});
+  const ai=async fn=>{try{return await fn();}catch(e){e.aiError=true;throw e;}};
   try{
     let content;
     if(BUNDLE_IMAGE_EXTS.includes(ext)){
@@ -268,10 +272,12 @@ async function describeAttachment(file,shareId){
         const storagePath=`${shareId}/${Date.now()}_${name}`;
         const {error:uploadError}=await supabaseBrowser.storage.from('evidence-uploads').upload(storagePath,file,{contentType:'application/pdf'});
         if(uploadError)throw new Error('Upload failed: '+uploadError.message);
-        const res=await fetch("/api/process-large-file",{method:"POST",headers:aiHeaders({"Content-Type":"application/json"}),body:JSON.stringify({storagePath,mediaType:'application/pdf',promptText:`Attachment filename: ${name}\n\n${ATTACHMENT_PROMPT}`})});
-        const data=await res.json();
-        if(data.error){notifyAiError(data);throw new Error(data.error);}
-        return finishAttachment(name,data.content?.[0]?.text||"");
+        return finishAttachment(name,await ai(async()=>{
+          const res=await fetch("/api/process-large-file",{method:"POST",headers:aiHeaders({"Content-Type":"application/json"}),body:JSON.stringify({storagePath,mediaType:'application/pdf',promptText:`Attachment filename: ${name}\n\n${ATTACHMENT_PROMPT}`})});
+          const data=await res.json();
+          if(data.error){notifyAiError(data);throw new Error(data.error);}
+          return data.content?.[0]?.text||"";
+        }));
       }
       content=[{type:"document",source:{type:"base64",media_type:"application/pdf",data:await fileToBase64(file)}},{type:"text",text:`Attachment filename: ${name}\n\n${ATTACHMENT_PROMPT}`}];
     }else if(ext==="txt"){
@@ -285,8 +291,8 @@ async function describeAttachment(file,shareId){
     }else{
       return notRead("this file type is not supported.");
     }
-    return finishAttachment(name,await callClaude([{role:"user",content}]));
-  }catch(e){return notRead(e.message||"something went wrong.");}
+    return finishAttachment(name,await ai(()=>callClaude([{role:"user",content}])));
+  }catch(e){if(e.aiError)throw e;return notRead(e.message||"something went wrong.");}
 }
 function finishAttachment(name,responseText){
   const p=extractJson(responseText)||{};
@@ -1576,7 +1582,7 @@ export default function GoliathonApp(){
       setProcessingMsg("Updating case overview…");
       const newDossier=await withWholeCaseOverview(mergeParsedIntoDossier(current,parsed));
       await updateDossier(newDossier);
-    }catch(e){alert("Something went wrong filing this email and its attachments. Please try again.\n\n"+e.message);}
+    }catch(e){alert("Nothing was filed: something went wrong reading this email and its attachments. Please try again.\n\n"+e.message+(/not allowed/i.test(e.message||"")?"\n\n(\"Not allowed\" means this web address is not permitted to use Goliathon's AI.)":""));}
     setProcessing(false);setProcessingMsg("");
   },[dossier,updateDossier,shareId]);
 
